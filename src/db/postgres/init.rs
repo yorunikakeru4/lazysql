@@ -1,19 +1,17 @@
-use crate::config::{Connect, Parse};
-use crate::db::repo::db_repo::{DbError, Repo};
-use async_trait::async_trait;
+use crate::config::PostgresConfig;
+use crate::db::repo::db_repo::DbError;
 use tokio_postgres::{Client, Error, NoTls};
 #[derive(Debug)]
 pub struct PostgresRepo {
     pub client: Client,
 }
-#[async_trait]
-impl Repo for PostgresRepo {
-    async fn new(connect_config: Connect) -> Result<Self, DbError> {
+impl PostgresRepo {
+    pub async fn new(connect_config: PostgresConfig) -> Result<Self, DbError> {
         let client = connect(connect_config).await.map_err(DbError::Postgres)?;
         Ok(PostgresRepo { client })
     }
 }
-async fn connect(config: Connect) -> Result<Client, Error> {
+async fn connect(config: PostgresConfig) -> Result<Client, Error> {
     let (client, connection) = tokio_postgres::connect(&config.from(), NoTls).await?;
 
     tokio::spawn(async move {
@@ -31,10 +29,10 @@ mod test {
 
     #[tokio::test]
     async fn test_connect() {
-        let config = crate::config::Connect {
+        let config = crate::config::PostgresConfig {
             host: "localhost".to_string(),
             user: "test_user".to_string(),
-            database: "db_test".to_string(),
+            db_name: "db_test".to_string(),
             port: 5432,
             password: Some("vBnA46MVSs".to_string()),
         };

@@ -35,7 +35,7 @@ pub struct TableField {
     pub default: Option<String>,
 }
 
-pub trait TableRepo {
+pub trait Database {
     async fn get_tables(&self, tables_names: Vec<String>) -> Result<Vec<Table>, DbError>;
     async fn get_schemas(&self) -> Result<Vec<Schema>, DbError>;
 }

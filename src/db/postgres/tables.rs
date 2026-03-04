@@ -1,9 +1,10 @@
 use crate::db::postgres::init::PostgresRepo;
 use crate::db::repo::db_repo::DbError;
-use crate::db::repo::tables_repo::{Schema, Table, TableField, TableRepo, parse_constraint};
+use crate::db::repo::tables_repo::{Database, Schema, Table, TableField, parse_constraint};
 use std::collections::HashMap;
 
-impl TableRepo for PostgresRepo {
+impl Database for PostgresRepo {
+    // TODO: добавить помимо связуюшей таблицы, ещё и связующее поле (для определения связей между таблицами, например, для генерации ER диаграммы)
     async fn get_tables(&self, table_names: Vec<String>) -> Result<Vec<Table>, DbError> {
         let rows = self
             .client
@@ -49,11 +50,20 @@ impl TableRepo for PostgresRepo {
                         ORDER BY c.table_name, c.column_name;",
                 &[&table_names],
             )
-            .await;
+            .await
+            .map_err(DbError::Postgres)
+            .and_then(|rows| {
+                if rows.is_empty() {
+                    Err(DbError::NotFound("Tables not found".to_string()))
+                } else {
+                    Ok(rows)
+                }
+            });
         let rows = match rows {
             Ok(rows) => rows,
-            Err(e) => return Err(DbError::Postgres(e)),
+            Err(e) => return Err(e),
         };
+
         let mut tables_info: HashMap<String, Vec<TableField>> = HashMap::new();
         for el in &rows {
             let table_name: String = el.get(0);
@@ -107,17 +117,15 @@ impl TableRepo for PostgresRepo {
 
 #[cfg(test)]
 mod test {
-    use crate::db::repo::db_repo::Repo;
-
     use super::*;
     use tokio;
 
     #[tokio::test]
     async fn test_get_schemas() {
-        let config = crate::config::Connect {
+        let config = crate::config::PostgresConfig {
             host: "localhost".to_string(),
             user: "test_user".to_string(),
-            database: "db_test".to_string(),
+            db_name: "db_test".to_string(),
             port: 5432,
             password: Some("vBnA46MVSs".to_string()),
         };
@@ -136,10 +144,10 @@ mod test {
     }
     #[tokio::test]
     async fn test_get_tables() {
-        let config = crate::config::Connect {
+        let config = crate::config::PostgresConfig {
             host: "localhost".to_string(),
             user: "test_user".to_string(),
-            database: "db_test".to_string(),
+            db_name: "db_test".to_string(),
             port: 5432,
             password: Some("vBnA46MVSs".to_string()),
         };
@@ -172,10 +180,10 @@ mod test {
 
     #[tokio::test]
     async fn test_full_db_get() {
-        let config = crate::config::Connect {
+        let config = crate::config::PostgresConfig {
             host: "localhost".to_string(),
             user: "test_user".to_string(),
-            database: "db_test".to_string(),
+            db_name: "db_test".to_string(),
             port: 5432,
             password: Some("vBnA46MVSs".to_string()),
         };
