@@ -15,6 +15,7 @@ pub fn parse_constraint(s: Option<&str>, referenced: Option<&str>) -> Option<Con
     }
 }
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct Schema {
     pub catalog: String,
     pub schema: String,

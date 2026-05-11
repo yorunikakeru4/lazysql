@@ -1,10 +1,5 @@
 pub mod storage;
-#[derive(Debug)]
-pub enum DbKind {
-    Postgres,
-    /* MySql,
-    Sqlite, */
-}
+
 #[derive(Debug, Clone)]
 pub enum Connect {
     Postgres(PostgresConfig),
@@ -12,15 +7,6 @@ pub enum Connect {
     // Sqlite(SqliteConfig),
 }
 
-impl Connect {
-    pub fn kind(&self) -> DbKind {
-        match self {
-            Connect::Postgres(_) => DbKind::Postgres,
-            /* Connect::MySql(_) => DbKind::MySql,
-            Connect::Sqlite(_) => DbKind::Sqlite, */
-        }
-    }
-}
 #[derive(Debug, Clone)]
 pub struct PostgresConfig {
     pub host: String,

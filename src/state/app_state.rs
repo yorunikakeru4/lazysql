@@ -29,11 +29,6 @@ impl AppState {
         }
     }
 
-    /// Appends a new connection config to the list.
-    pub fn add(&mut self, connection: Connect) {
-        self.connections.push(connection);
-    }
-
     /// Unique schema names sorted alphabetically.
     pub fn schema_names(&self) -> Vec<String> {
         self.schemas_raw
