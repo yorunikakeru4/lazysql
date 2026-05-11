@@ -113,12 +113,12 @@ async fn run(
             },
 
             Some(Screen::AddConnection) => match key.code {
-                KeyCode::Esc | KeyCode::Char('h') => {
+                KeyCode::Esc => {
                     state.form.reset();
                     router.pop();
                 }
-                KeyCode::Tab | KeyCode::Down | KeyCode::Char('j') => state.form.next_field(),
-                KeyCode::BackTab | KeyCode::Up | KeyCode::Char('k') => state.form.prev_field(),
+                KeyCode::Tab | KeyCode::Down => state.form.next_field(),
+                KeyCode::BackTab | KeyCode::Up => state.form.prev_field(),
                 KeyCode::Backspace => {
                     state.form.current_value_mut().pop();
                 }
