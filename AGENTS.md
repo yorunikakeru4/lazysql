@@ -4,7 +4,7 @@ Guidance for AI agents working in this repository.
 
 ## Project Overview
 
-**lazy-sql** — terminal UI (TUI) for exploring PostgreSQL databases.
+**lazysql** — terminal UI (TUI) for exploring PostgreSQL databases.
 Allows connecting to a configured database, browsing schemas, tables, and field metadata.
 
 - **Language**: Rust (edition 2024)

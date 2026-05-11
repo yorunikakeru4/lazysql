@@ -23,13 +23,13 @@ pub struct ConfigStorage;
 
 #[allow(dead_code)]
 impl ConfigStorage {
-    /// Returns the default config file path: `~/.config/lazy-sql/config.toml`.
-    /// Falls back to `./.config/lazy-sql/config.toml` when `HOME` is unset.
+    /// Returns the default config file path: `~/.config/lazysql/config.toml`.
+    /// Falls back to `./.config/lazysql/config.toml` when `HOME` is unset.
     pub fn config_path() -> PathBuf {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         PathBuf::from(home)
             .join(".config")
-            .join("lazy-sql")
+            .join("lazysql")
             .join("config.toml")
     }
 
@@ -145,5 +145,11 @@ mod test {
         assert_eq!(loaded.len(), 1);
         let Connect::Postgres(cfg) = &loaded[0];
         assert_eq!(cfg.password, None);
+    }
+
+    #[test]
+    fn config_path_uses_lazysql_directory() {
+        let path = ConfigStorage::config_path();
+        assert!(path.ends_with(Path::new(".config").join("lazysql").join("config.toml")));
     }
 }

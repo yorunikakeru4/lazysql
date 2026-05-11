@@ -100,7 +100,7 @@ fn render_connect(frame: &mut Frame, state: &AppState) {
     let list = List::new(items)
         .block(
             Block::bordered()
-                .title(" lazy-sql — Connections (j/k navigate, l/Enter connect, a add, q quit) "),
+                .title(" lazysql — Connections (j/k navigate, l/Enter connect, a add, q quit) "),
         )
         .highlight_style(Style::default().reversed());
     frame.render_stateful_widget(list, chunks[0], &mut list_state);
@@ -109,7 +109,7 @@ fn render_connect(frame: &mut Frame, state: &AppState) {
         .connect
         .error
         .as_deref()
-        .unwrap_or("No connections saved. Edit ~/.config/lazy-sql/config.toml to add one.");
+        .unwrap_or("No connections saved. Edit ~/.config/lazysql/config.toml to add one.");
     frame.render_widget(
         Paragraph::new(hint).block(Block::bordered().title(" Status ")),
         chunks[1],
