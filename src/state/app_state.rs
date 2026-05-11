@@ -29,6 +29,7 @@ impl AppState {
         }
     }
 
+    /// Appends a new connection config to the list.
     pub fn add(&mut self, connection: Connect) {
         self.connections.push(connection);
     }
@@ -45,11 +46,14 @@ impl AppState {
 
     /// Table names within the given schema.
     pub fn table_names_in_schema(&self, schema: &str) -> Vec<String> {
-        self.schemas_raw
+        let mut names: Vec<String> = self
+            .schemas_raw
             .iter()
             .filter(|s| s.schema == schema)
             .map(|s| s.name.clone())
-            .collect()
+            .collect();
+        names.sort();
+        names
     }
 
     /// The schema name at the current `schema_selected` index, if any.
@@ -69,6 +73,11 @@ impl AppState {
     pub async fn connect_selected(&mut self) -> Result<(), DbError> {
         self.connect.error = None;
         let idx = self.connect.selected;
+        if idx >= self.connections.len() {
+            let msg = "No connection at selected index".to_string();
+            self.connect.error = Some(msg.clone());
+            return Err(DbError::NotFound(msg));
+        }
         match &self.connections[idx] {
             Postgres(_) => match DbClient::new(self.connections[idx].clone()).await {
                 Ok(client) => {
@@ -177,5 +186,13 @@ mod test {
     fn selected_schema_name_returns_none_when_empty() {
         let state = AppState::new(vec![pg_connect()]);
         assert_eq!(state.selected_schema_name(), None);
+    }
+
+    #[tokio::test]
+    async fn connect_selected_out_of_bounds_returns_error() {
+        let mut state = AppState::new(vec![]);
+        let result = state.connect_selected().await;
+        assert!(result.is_err());
+        assert!(state.connect.error.is_some());
     }
 }
