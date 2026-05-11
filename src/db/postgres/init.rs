@@ -12,7 +12,7 @@ impl PostgresRepo {
     }
 }
 async fn connect(config: PostgresConfig) -> Result<Client, Error> {
-    let (client, connection) = tokio_postgres::connect(&config.from(), NoTls).await?;
+    let (client, connection) = tokio_postgres::connect(&config.connection_string(), NoTls).await?;
 
     tokio::spawn(async move {
         if let Err(e) = connection.await {
@@ -25,19 +25,23 @@ async fn connect(config: PostgresConfig) -> Result<Client, Error> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use tokio;
+
+    fn test_config() -> crate::config::PostgresConfig {
+        crate::config::PostgresConfig {
+            host: std::env::var("TEST_DB_HOST").unwrap_or_else(|_| "localhost".to_string()),
+            user: std::env::var("TEST_DB_USER").unwrap_or_else(|_| "test_user".to_string()),
+            db_name: std::env::var("TEST_DB_NAME").unwrap_or_else(|_| "db_test".to_string()),
+            port: std::env::var("TEST_DB_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(5432),
+            password: std::env::var("TEST_DB_PASSWORD").ok(),
+        }
+    }
 
     #[tokio::test]
-    async fn test_connect() {
-        let config = crate::config::PostgresConfig {
-            host: "localhost".to_string(),
-            user: "test_user".to_string(),
-            db_name: "db_test".to_string(),
-            port: 5432,
-            password: Some("vBnA46MVSs".to_string()),
-        };
-
-        let client = PostgresRepo::new(config).await.unwrap();
+    async fn connect() {
+        let client = PostgresRepo::new(test_config()).await.unwrap();
         println!("Connection successful: {:?}", client);
     }
 }

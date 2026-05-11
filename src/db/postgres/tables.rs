@@ -58,11 +58,7 @@ impl Database for PostgresRepo {
                 } else {
                     Ok(rows)
                 }
-            });
-        let rows = match rows {
-            Ok(rows) => rows,
-            Err(e) => return Err(e),
-        };
+            })?;
 
         let mut tables_info: HashMap<String, Vec<TableField>> = HashMap::new();
         for el in &rows {
@@ -97,13 +93,10 @@ impl Database for PostgresRepo {
             ",
                 &[],
             )
-            .await;
-        let rows = match rows {
-            Ok(rows) => rows,
-            Err(e) => return Err(DbError::Postgres(e)),
-        };
+            .await
+            .map_err(DbError::Postgres)?;
         let schemas = rows
-            .iter()
+            .into_iter()
             .map(|x| Schema {
                 catalog: x.get(0),
                 schema: x.get(1),
@@ -118,19 +111,23 @@ impl Database for PostgresRepo {
 #[cfg(test)]
 mod test {
     use super::*;
-    use tokio;
+
+    fn test_config() -> crate::config::PostgresConfig {
+        crate::config::PostgresConfig {
+            host: std::env::var("TEST_DB_HOST").unwrap_or_else(|_| "localhost".to_string()),
+            user: std::env::var("TEST_DB_USER").unwrap_or_else(|_| "test_user".to_string()),
+            db_name: std::env::var("TEST_DB_NAME").unwrap_or_else(|_| "db_test".to_string()),
+            port: std::env::var("TEST_DB_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(5432),
+            password: std::env::var("TEST_DB_PASSWORD").ok(),
+        }
+    }
 
     #[tokio::test]
-    async fn test_get_schemas() {
-        let config = crate::config::PostgresConfig {
-            host: "localhost".to_string(),
-            user: "test_user".to_string(),
-            db_name: "db_test".to_string(),
-            port: 5432,
-            password: Some("vBnA46MVSs".to_string()),
-        };
-
-        let client = PostgresRepo::new(config).await.unwrap();
+    async fn get_schemas() {
+        let client = PostgresRepo::new(test_config()).await.unwrap();
         let users: Schema = client
             .get_schemas()
             .await
@@ -142,55 +139,33 @@ mod test {
         assert_eq!(users.schema, "public");
         assert_eq!(users.catalog, "db_test");
     }
-    #[tokio::test]
-    async fn test_get_tables() {
-        let config = crate::config::PostgresConfig {
-            host: "localhost".to_string(),
-            user: "test_user".to_string(),
-            db_name: "db_test".to_string(),
-            port: 5432,
-            password: Some("vBnA46MVSs".to_string()),
-        };
 
-        let client = PostgresRepo::new(config).await.unwrap();
-        let table_names: Vec<String> = vec!["users".to_string(), "posts".to_string()];
-        test_tables(client, table_names).await;
+    #[tokio::test]
+    async fn get_tables() {
+        let client = PostgresRepo::new(test_config()).await.unwrap();
+        let table_names = vec!["users".to_string(), "posts".to_string()];
+        verify_tables(client, table_names).await;
     }
-    async fn test_tables(client: PostgresRepo, table_names: Vec<String>) {
+
+    async fn verify_tables(client: PostgresRepo, table_names: Vec<String>) {
         let tables = client.get_tables(table_names).await.unwrap();
-        tables
-            .iter()
-            .find(|f| f.name == "posts")
-            .unwrap()
-            .fields
-            .iter()
-            .for_each(|field| {
-                if field.name == "user_id" {
-                    assert_eq!(field.data_type, "integer");
-                    assert_eq!(field.is_nullable, "NO");
-                    assert_eq!(
-                        field.constraint_type,
-                        Some(crate::db::repo::tables_repo::ConstraintType::ForeignKey(
-                            "users".to_string()
-                        ))
-                    );
-                }
-            });
+        let posts = tables.iter().find(|f| f.name == "posts").unwrap();
+        let user_id = posts.fields.iter().find(|f| f.name == "user_id").unwrap();
+        assert_eq!(user_id.data_type, "integer");
+        assert_eq!(user_id.is_nullable, "NO");
+        assert_eq!(
+            user_id.constraint_type,
+            Some(crate::db::repo::tables_repo::ConstraintType::ForeignKey(
+                "users".to_string()
+            ))
+        );
     }
 
     #[tokio::test]
-    async fn test_full_db_get() {
-        let config = crate::config::PostgresConfig {
-            host: "localhost".to_string(),
-            user: "test_user".to_string(),
-            db_name: "db_test".to_string(),
-            port: 5432,
-            password: Some("vBnA46MVSs".to_string()),
-        };
-
-        let client = PostgresRepo::new(config).await.unwrap();
+    async fn full_db_get() {
+        let client = PostgresRepo::new(test_config()).await.unwrap();
         let schemas = client.get_schemas().await.unwrap();
         let table_names: Vec<String> = schemas.iter().map(|s| s.name.clone()).collect();
-        test_tables(client, table_names).await;
+        verify_tables(client, table_names).await;
     }
 }

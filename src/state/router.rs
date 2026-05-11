@@ -8,7 +8,36 @@
     widgets::{Block, Paragraph, Widget},
 }; */
 
-use crate::db::repo;
+#[derive(Debug)]
+enum Screen {
+    Connect,
+    Schemas,
+    Tables,
+    TableView,
+}
 
 #[derive(Debug)]
-struct Router {}
+struct Router {
+    stack: Vec<Screen>,
+}
+
+impl From<Vec<Screen>> for Router {
+    fn from(stack: Vec<Screen>) -> Self {
+        Self { stack }
+    }
+}
+
+impl Router {
+    pub fn push(&mut self, screen: Screen) {
+        self.stack.push(screen);
+    }
+    pub fn pop(&mut self) {
+        self.stack.pop();
+    }
+    pub fn current(&self) -> Option<&Screen> {
+        self.stack.last()
+    }
+    pub fn current_mut(&mut self) -> Option<&mut Screen> {
+        self.stack.last_mut()
+    }
+}
