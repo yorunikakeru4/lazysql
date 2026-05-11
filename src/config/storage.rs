@@ -1,6 +1,9 @@
 use crate::config::{Connect, PostgresConfig};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct StoredConfig {
@@ -19,6 +22,8 @@ struct StoredConnection {
 pub struct ConfigStorage;
 
 impl ConfigStorage {
+    /// Returns the default config file path: `~/.config/lazy-sql/config.toml`.
+    /// Falls back to `./.config/lazy-sql/config.toml` when `HOME` is unset.
     pub fn config_path() -> PathBuf {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         PathBuf::from(home).join(".config").join("lazy-sql").join("config.toml")
@@ -26,8 +31,16 @@ impl ConfigStorage {
 
     /// Reads saved connections from disk. Returns empty vec if file is missing or unparseable.
     pub fn load() -> Vec<Connect> {
-        let path = Self::config_path();
-        let Ok(content) = fs::read_to_string(&path) else {
+        Self::load_from(&Self::config_path())
+    }
+
+    /// Writes connections to disk, creating directories as needed.
+    pub fn save(connections: &[Connect]) -> Result<(), std::io::Error> {
+        Self::save_to(&Self::config_path(), connections)
+    }
+
+    fn load_from(path: &Path) -> Vec<Connect> {
+        let Ok(content) = fs::read_to_string(path) else {
             return Vec::new();
         };
         let Ok(stored): Result<StoredConfig, _> = toml::from_str(&content) else {
@@ -48,53 +61,47 @@ impl ConfigStorage {
             .collect()
     }
 
-    /// Writes connections to disk, creating directories as needed.
-    pub fn save(connections: &[Connect]) {
-        let path = Self::config_path();
+    fn save_to(path: &Path, connections: &[Connect]) -> Result<(), std::io::Error> {
         if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
+            fs::create_dir_all(parent)?;
         }
         let stored = StoredConfig {
             connections: connections
                 .iter()
-                .map(|c| match c {
-                    Connect::Postgres(cfg) => StoredConnection {
+                .filter_map(|c| match c {
+                    Connect::Postgres(cfg) => Some(StoredConnection {
                         host: cfg.host.clone(),
                         user: cfg.user.clone(),
                         db_name: cfg.db_name.clone(),
                         port: cfg.port,
                         password: cfg.password.clone(),
-                    },
+                    }),
                 })
                 .collect(),
         };
-        if let Ok(content) = toml::to_string(&stored) {
-            let _ = fs::write(&path, content);
-        }
+        let content = toml::to_string(&stored)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        fs::write(path, content)
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::config::PostgresConfig;
 
     #[test]
     fn load_returns_empty_when_no_file() {
         let dir = tempfile::tempdir().unwrap();
-        unsafe {
-            std::env::set_var("HOME", dir.path());
-        }
-        let result = ConfigStorage::load();
+        let path = dir.path().join("config.toml");
+        let result = ConfigStorage::load_from(&path);
         assert!(result.is_empty());
-        drop(dir);
     }
 
     #[test]
     fn round_trip_postgres_config() {
         let dir = tempfile::tempdir().unwrap();
-        unsafe {
-            std::env::set_var("HOME", dir.path());
-        }
+        let path = dir.path().join("config.toml");
 
         let config = Connect::Postgres(PostgresConfig {
             host: "localhost".to_string(),
@@ -104,8 +111,8 @@ mod test {
             password: Some("secret".to_string()),
         });
 
-        ConfigStorage::save(&[config]);
-        let loaded = ConfigStorage::load();
+        ConfigStorage::save_to(&path, &[config]).unwrap();
+        let loaded = ConfigStorage::load_from(&path);
 
         assert_eq!(loaded.len(), 1);
         let Connect::Postgres(cfg) = &loaded[0];
@@ -114,15 +121,12 @@ mod test {
         assert_eq!(cfg.db_name, "mydb");
         assert_eq!(cfg.port, 5432);
         assert_eq!(cfg.password, Some("secret".to_string()));
-        drop(dir);
     }
 
     #[test]
     fn round_trip_no_password() {
         let dir = tempfile::tempdir().unwrap();
-        unsafe {
-            std::env::set_var("HOME", dir.path());
-        }
+        let path = dir.path().join("config.toml");
 
         let config = Connect::Postgres(PostgresConfig {
             host: "db".to_string(),
@@ -132,12 +136,9 @@ mod test {
             password: None,
         });
 
-        ConfigStorage::save(&[config]);
-        let loaded = ConfigStorage::load();
-
-        assert_eq!(loaded.len(), 1);
+        ConfigStorage::save_to(&path, &[config]).unwrap();
+        let loaded = ConfigStorage::load_from(&path);
         let Connect::Postgres(cfg) = &loaded[0];
         assert_eq!(cfg.password, None);
-        drop(dir);
     }
 }
