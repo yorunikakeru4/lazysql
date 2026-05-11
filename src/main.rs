@@ -46,12 +46,14 @@ async fn run(
     loop {
         terminal.draw(|frame| ui::render(frame, state, router))?;
 
-        let Some(Ok(event)) = events.next().await else {
-            break;
+        let event = match events.next().await {
+            Some(Ok(e)) => e,
+            Some(Err(e)) => return Err(e),
+            None => break,
         };
 
         if let Event::Key(key) = event {
-            if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
+            if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
                 break;
             }
 
