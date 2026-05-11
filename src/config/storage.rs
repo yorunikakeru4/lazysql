@@ -26,7 +26,10 @@ impl ConfigStorage {
     /// Falls back to `./.config/lazy-sql/config.toml` when `HOME` is unset.
     pub fn config_path() -> PathBuf {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(home).join(".config").join("lazy-sql").join("config.toml")
+        PathBuf::from(home)
+            .join(".config")
+            .join("lazy-sql")
+            .join("config.toml")
     }
 
     /// Reads saved connections from disk. Returns empty vec if file is missing or unparseable.
