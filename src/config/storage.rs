@@ -68,14 +68,14 @@ impl ConfigStorage {
         let stored = StoredConfig {
             connections: connections
                 .iter()
-                .filter_map(|c| match c {
-                    Connect::Postgres(cfg) => Some(StoredConnection {
+                .map(|c| match c {
+                    Connect::Postgres(cfg) => StoredConnection {
                         host: cfg.host.clone(),
                         user: cfg.user.clone(),
                         db_name: cfg.db_name.clone(),
                         port: cfg.port,
                         password: cfg.password.clone(),
-                    }),
+                    },
                 })
                 .collect(),
         };
@@ -138,6 +138,7 @@ mod test {
 
         ConfigStorage::save_to(&path, &[config]).unwrap();
         let loaded = ConfigStorage::load_from(&path);
+        assert_eq!(loaded.len(), 1);
         let Connect::Postgres(cfg) = &loaded[0];
         assert_eq!(cfg.password, None);
     }
