@@ -100,7 +100,7 @@ fn render_connect(frame: &mut Frame, state: &AppState) {
     let list = List::new(items)
         .block(
             Block::bordered()
-                .title(" lazy-sql — Connections (↑↓ navigate, Enter connect, q quit) "),
+                .title(" lazy-sql — Connections (j/k navigate, l/Enter connect, a add, q quit) "),
         )
         .highlight_style(Style::default().reversed());
     frame.render_stateful_widget(list, chunks[0], &mut list_state);
