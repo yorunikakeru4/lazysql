@@ -4,6 +4,7 @@ use crate::db::repo::db_repo::{DbClient, DbError};
 use crate::db::repo::tables_repo::{Database, Schema, Table};
 use crate::state::connect::ConnectState;
 use crate::state::form::FormState;
+use crate::state::search::SearchState;
 use std::collections::BTreeSet;
 
 #[derive(Debug)]
@@ -12,6 +13,7 @@ pub struct AppState {
     pub current_db: Option<DbClient>,
     pub connect: ConnectState,
     pub form: FormState,
+    pub search: SearchState,
     pub schemas_raw: Vec<Schema>,
     pub schema_selected: usize,
     pub table_selected: usize,
@@ -25,6 +27,7 @@ impl AppState {
             current_db: None,
             connect: ConnectState::default(),
             form: FormState::default(),
+            search: SearchState::default(),
             schemas_raw: Vec::new(),
             schema_selected: 0,
             table_selected: 0,
@@ -54,17 +57,46 @@ impl AppState {
         names
     }
 
+    /// Schema names filtered by `search.query` (case-insensitive, empty query = all).
+    pub fn filtered_schema_names(&self) -> Vec<String> {
+        self.schema_names()
+            .into_iter()
+            .filter(|n| self.search.matches(n))
+            .collect()
+    }
+
+    /// Table names within `schema` filtered by `search.query`.
+    pub fn filtered_table_names(&self, schema: &str) -> Vec<String> {
+        self.table_names_in_schema(schema)
+            .into_iter()
+            .filter(|n| self.search.matches(n))
+            .collect()
+    }
+
+    /// Clamps `schema_selected` and `table_selected` to the lengths of the
+    /// currently filtered lists. Call after every query change.
+    pub fn clamp_search_selections(&mut self) {
+        let schema_len = self.filtered_schema_names().len();
+        if schema_len == 0 {
+            self.schema_selected = 0;
+        } else {
+            self.schema_selected = self.schema_selected.min(schema_len - 1);
+        }
+
+        let table_len = self
+            .selected_schema_name()
+            .map(|s| self.filtered_table_names(&s).len())
+            .unwrap_or(0);
+        if table_len == 0 {
+            self.table_selected = 0;
+        } else {
+            self.table_selected = self.table_selected.min(table_len - 1);
+        }
+    }
+
     /// The schema name at the current `schema_selected` index, if any.
     pub fn selected_schema_name(&self) -> Option<String> {
         self.schema_names().into_iter().nth(self.schema_selected)
-    }
-
-    /// The table name at the current `table_selected` index within selected schema.
-    pub fn selected_table_name(&self) -> Option<String> {
-        let schema = self.selected_schema_name()?;
-        self.table_names_in_schema(&schema)
-            .into_iter()
-            .nth(self.table_selected)
     }
 
     /// Connects to the database at `connect.selected` index.
@@ -101,15 +133,13 @@ impl AppState {
         Ok(())
     }
 
-    /// Loads full field details for the currently selected table.
-    pub async fn load_table(&mut self) -> Result<(), DbError> {
-        let table_name = self
-            .selected_table_name()
-            .ok_or_else(|| DbError::NotFound("No table selected".to_string()))?;
+    /// Loads full field details for a table by explicit name (used when the
+    /// table was selected from a filtered list).
+    pub async fn load_table_by_name(&mut self, name: String) -> Result<(), DbError> {
         let Some(DbClient::Postgres(repo)) = &self.current_db else {
             return Err(DbError::NotFound("No active connection".to_string()));
         };
-        let mut tables = repo.get_tables(vec![table_name]).await?;
+        let mut tables = repo.get_tables(vec![name]).await?;
         self.loaded_table = tables.pop();
         Ok(())
     }
@@ -192,5 +222,62 @@ mod test {
         let result = state.connect_selected().await;
         assert!(result.is_err());
         assert!(state.connect.error.is_some());
+    }
+
+    #[test]
+    fn filtered_schema_names_empty_query_returns_all() {
+        let mut state = AppState::new(vec![pg_connect()]);
+        state.schemas_raw = vec![
+            Schema {
+                catalog: "d".to_string(),
+                schema: "public".to_string(),
+                name: "users".to_string(),
+            },
+            Schema {
+                catalog: "d".to_string(),
+                schema: "auth".to_string(),
+                name: "tokens".to_string(),
+            },
+        ];
+        assert_eq!(state.filtered_schema_names(), vec!["auth", "public"]);
+    }
+
+    #[test]
+    fn filtered_schema_names_filters_by_query() {
+        let mut state = AppState::new(vec![pg_connect()]);
+        state.schemas_raw = vec![
+            Schema {
+                catalog: "d".to_string(),
+                schema: "public".to_string(),
+                name: "users".to_string(),
+            },
+            Schema {
+                catalog: "d".to_string(),
+                schema: "auth".to_string(),
+                name: "tokens".to_string(),
+            },
+        ];
+        state.search.query = "pub".to_string();
+        assert_eq!(state.filtered_schema_names(), vec!["public"]);
+    }
+
+    #[test]
+    fn filtered_table_names_filters_by_query() {
+        let mut state = AppState::new(vec![pg_connect()]);
+        state.schemas_raw = vec![
+            Schema {
+                catalog: "d".to_string(),
+                schema: "public".to_string(),
+                name: "users".to_string(),
+            },
+            Schema {
+                catalog: "d".to_string(),
+                schema: "public".to_string(),
+                name: "posts".to_string(),
+            },
+        ];
+        state.search.query = "user".to_string();
+        let result = state.filtered_table_names("public");
+        assert_eq!(result, vec!["users"]);
     }
 }

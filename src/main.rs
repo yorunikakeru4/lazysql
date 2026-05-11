@@ -77,6 +77,53 @@ async fn run(
             // Not a gg sequence — fall through to normal handling below.
         }
 
+        // Search input mode: capture all keys for the query.
+        if state.search.active {
+            match key.code {
+                KeyCode::Esc => {
+                    state.search.reset();
+                    state.schema_selected = 0;
+                    state.table_selected = 0;
+                }
+                KeyCode::Enter => state.search.close(),
+                KeyCode::Backspace => {
+                    state.search.query.pop();
+                    state.clamp_search_selections();
+                }
+                KeyCode::Down | KeyCode::Char('j') => match router.current() {
+                    Some(Screen::Schemas) => {
+                        let len = state.filtered_schema_names().len();
+                        if len > 0 {
+                            state.schema_selected = (state.schema_selected + 1) % len;
+                        }
+                    }
+                    Some(Screen::Tables) => {
+                        let schema = state.selected_schema_name().unwrap_or_default();
+                        let len = state.filtered_table_names(&schema).len();
+                        if len > 0 {
+                            state.table_selected = (state.table_selected + 1) % len;
+                        }
+                    }
+                    _ => {}
+                },
+                KeyCode::Up | KeyCode::Char('k') => match router.current() {
+                    Some(Screen::Schemas) => {
+                        state.schema_selected = state.schema_selected.saturating_sub(1);
+                    }
+                    Some(Screen::Tables) => {
+                        state.table_selected = state.table_selected.saturating_sub(1);
+                    }
+                    _ => {}
+                },
+                KeyCode::Char(c) => {
+                    state.search.query.push(c);
+                    state.clamp_search_selections();
+                }
+                _ => {}
+            }
+            continue;
+        }
+
         match router.current() {
             Some(Screen::Connect) => match key.code {
                 KeyCode::Char('q') => break,
@@ -139,9 +186,10 @@ async fn run(
             },
 
             Some(Screen::Schemas) => {
-                let len = state.schema_names().len();
+                let len = state.filtered_schema_names().len();
                 match key.code {
                     KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
+                        state.search.reset();
                         router.pop();
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
@@ -153,7 +201,19 @@ async fn run(
                         state.schema_selected = state.schema_selected.saturating_sub(1);
                     }
                     KeyCode::Char('l') | KeyCode::Enter => {
+                        let chosen = state
+                            .filtered_schema_names()
+                            .into_iter()
+                            .nth(state.schema_selected);
+                        state.search.reset();
                         state.table_selected = 0;
+                        if let Some(name) = chosen {
+                            state.schema_selected = state
+                                .schema_names()
+                                .iter()
+                                .position(|s| *s == name)
+                                .unwrap_or(0);
+                        }
                         router.push(Screen::Tables);
                     }
                     KeyCode::Char('G') => {
@@ -162,15 +222,17 @@ async fn run(
                         }
                     }
                     KeyCode::Char('g') => pending_g = true,
+                    KeyCode::Char('/') => state.search.open(),
                     _ => {}
                 }
             }
 
             Some(Screen::Tables) => {
                 let schema = state.selected_schema_name().unwrap_or_default();
-                let len = state.table_names_in_schema(&schema).len();
+                let len = state.filtered_table_names(&schema).len();
                 match key.code {
                     KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
+                        state.search.reset();
                         router.pop();
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
@@ -182,7 +244,14 @@ async fn run(
                         state.table_selected = state.table_selected.saturating_sub(1);
                     }
                     KeyCode::Char('l') | KeyCode::Enter => {
-                        if state.load_table().await.is_ok() {
+                        let chosen = state
+                            .filtered_table_names(&schema)
+                            .into_iter()
+                            .nth(state.table_selected);
+                        state.search.reset();
+                        if let Some(name) = chosen
+                            && state.load_table_by_name(name).await.is_ok()
+                        {
                             router.push(Screen::TableView);
                         }
                     }
@@ -192,18 +261,19 @@ async fn run(
                         }
                     }
                     KeyCode::Char('g') => pending_g = true,
+                    KeyCode::Char('/') => state.search.open(),
                     _ => {}
                 }
             }
 
-            Some(Screen::TableView) => {
-                if matches!(
-                    key.code,
-                    KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h')
-                ) {
+            Some(Screen::TableView) => match key.code {
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
+                    state.search.reset();
                     router.pop();
                 }
-            }
+                KeyCode::Char('/') => state.search.open(),
+                _ => {}
+            },
 
             None => break,
         }

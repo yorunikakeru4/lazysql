@@ -1,7 +1,7 @@
 test:
     podman-compose up --build -d # поднимаем тестовое бд, к которому будем подключаться
     until podman exec postgres_test pg_isready -U test; do sleep 1; done
-    cargo test -v
+    TEST_DB_PASSWORD=$(podman exec postgres_test printenv POSTGRES_PASSWORD) cargo test -v
     podman-compose down -v
 
 up:

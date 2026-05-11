@@ -1,11 +1,11 @@
 use crate::config::Connect;
-use crate::db::repo::tables_repo::Table;
+use crate::db::repo::tables_repo::TableField;
 use crate::state::app_state::AppState;
 use crate::state::form::FIELD_LABELS;
 use crate::state::router::{Router, Screen};
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout, Position},
+    layout::{Constraint, Layout, Position, Rect},
     style::{Style, Stylize},
     widgets::{Block, List, ListItem, ListState, Paragraph},
 };
@@ -116,77 +116,230 @@ fn render_connect(frame: &mut Frame, state: &AppState) {
     );
 }
 
+/// Renders the search bar at `area`. Shows cursor when active.
+fn render_search_bar(frame: &mut Frame, area: Rect, state: &AppState) {
+    let (title, text) = if state.search.active {
+        (" / ", format!("{}_", state.search.query))
+    } else {
+        (" Filter ", format!("/{}", state.search.query))
+    };
+
+    frame.render_widget(
+        Paragraph::new(text.as_str()).block(Block::bordered().title(title)),
+        area,
+    );
+
+    if state.search.active {
+        // cursor sits after the query text, inside the border
+        let cursor_x = (area.x + 1 + state.search.query.len() as u16)
+            .min(area.x + area.width.saturating_sub(2));
+        frame.set_cursor_position(Position::new(cursor_x, area.y + 1));
+    }
+}
+
 fn render_schemas(frame: &mut Frame, state: &AppState) {
     let area = frame.area();
-    let names = state.schema_names();
+    let show_bar = state.search.active || !state.search.query.is_empty();
+    let chunks = Layout::vertical(if show_bar {
+        vec![Constraint::Fill(1), Constraint::Length(3)]
+    } else {
+        vec![Constraint::Fill(1)]
+    })
+    .split(area);
 
+    let names = state.filtered_schema_names();
     let items: Vec<ListItem> = names.iter().map(|n| ListItem::new(n.as_str())).collect();
     let mut list_state = ListState::default().with_selected(Some(state.schema_selected));
     let list = List::new(items)
-        .block(Block::bordered().title(" Schemas (Enter select, Esc back) "))
+        .block(
+            Block::bordered()
+                .title(" Schemas (j/k navigate, l/Enter select, / search, h/Esc back) "),
+        )
         .highlight_style(Style::default().reversed());
-    frame.render_stateful_widget(list, area, &mut list_state);
+    frame.render_stateful_widget(list, chunks[0], &mut list_state);
+
+    if show_bar {
+        render_search_bar(frame, chunks[1], state);
+    }
 }
 
 fn render_tables(frame: &mut Frame, state: &AppState) {
     let area = frame.area();
+    let show_bar = state.search.active || !state.search.query.is_empty();
+    let chunks = Layout::vertical(if show_bar {
+        vec![Constraint::Fill(1), Constraint::Length(3)]
+    } else {
+        vec![Constraint::Fill(1)]
+    })
+    .split(area);
+
     let schema = state.selected_schema_name().unwrap_or_default();
-    let names = state.table_names_in_schema(&schema);
+    let names = state.filtered_table_names(&schema);
 
     let items: Vec<ListItem> = names.iter().map(|n| ListItem::new(n.as_str())).collect();
     let mut list_state = ListState::default().with_selected(Some(state.table_selected));
     let list = List::new(items)
         .block(Block::bordered().title(format!(
-            " Tables in schema '{schema}' (Enter view, Esc back) "
+            " Tables in '{schema}' (j/k navigate, l/Enter view, / search, h/Esc back) "
         )))
         .highlight_style(Style::default().reversed());
-    frame.render_stateful_widget(list, area, &mut list_state);
+    frame.render_stateful_widget(list, chunks[0], &mut list_state);
+
+    if show_bar {
+        render_search_bar(frame, chunks[1], state);
+    }
 }
 
 fn render_table_view(frame: &mut Frame, state: &AppState) {
     let area = frame.area();
+    let show_bar = state.search.active || !state.search.query.is_empty();
+    let chunks = Layout::vertical(if show_bar {
+        vec![Constraint::Fill(1), Constraint::Length(3)]
+    } else {
+        vec![Constraint::Fill(1)]
+    })
+    .split(area);
 
     let Some(table) = &state.loaded_table else {
         frame.render_widget(
             Paragraph::new("No table loaded.").block(Block::bordered()),
-            area,
+            chunks[0],
         );
         return;
     };
 
-    let content = format_table(table);
-    frame.render_widget(
-        Paragraph::new(content)
-            .block(Block::bordered().title(format!(" Table: {} (Esc back) ", table.name))),
-        area,
-    );
-}
-
-fn format_table(table: &Table) -> String {
-    let header = format!(
-        "{:<30} {:<20} {:<10} {:<20} {}\n{}\n",
-        "Column",
-        "Type",
-        "Nullable",
-        "Constraint",
-        "Default",
-        "-".repeat(90)
-    );
-    let rows: String = table
+    let fields: Vec<&TableField> = table
         .fields
         .iter()
-        .map(|f| {
-            let constraint = f
-                .constraint_type
-                .as_ref()
-                .map(|c| format!("{c:?}"))
-                .unwrap_or_default();
-            let default = f.default.clone().unwrap_or_default();
+        .filter(|f| state.search.matches(&f.name))
+        .collect();
+
+    let content = format_fields(&fields);
+    frame.render_widget(
+        Paragraph::new(content).block(
+            Block::bordered().title(format!(" Table: {} (/ search, h/Esc back) ", table.name)),
+        ),
+        chunks[0],
+    );
+
+    if show_bar {
+        render_search_bar(frame, chunks[1], state);
+    }
+}
+
+fn format_fields(fields: &[&TableField]) -> String {
+    const COLUMN_GAP: &str = "   ";
+
+    let mut rows: Vec<(&str, &str, &str, String, String)> = Vec::with_capacity(fields.len());
+    for f in fields {
+        let constraint = f
+            .constraint_type
+            .as_ref()
+            .map(|c| format!("{c:?}"))
+            .unwrap_or_default();
+        let default = f.default.clone().unwrap_or_default();
+        rows.push((&f.name, &f.data_type, &f.is_nullable, constraint, default));
+    }
+
+    let name_w = rows
+        .iter()
+        .map(|(name, _, _, _, _)| name.len())
+        .max()
+        .unwrap_or(0)
+        .max("Column".len());
+    let type_w = rows
+        .iter()
+        .map(|(_, data_type, _, _, _)| data_type.len())
+        .max()
+        .unwrap_or(0)
+        .max("Type".len());
+    let nullable_w = rows
+        .iter()
+        .map(|(_, _, nullable, _, _)| nullable.len())
+        .max()
+        .unwrap_or(0)
+        .max("Nullable".len());
+    let constraint_w = rows
+        .iter()
+        .map(|(_, _, _, constraint, _)| constraint.len())
+        .max()
+        .unwrap_or(0)
+        .max("Constraint".len());
+
+    let header = format!(
+        "{:<name_w$}{COLUMN_GAP}{:<type_w$}{COLUMN_GAP}{:<nullable_w$}{COLUMN_GAP}{:<constraint_w$}{COLUMN_GAP}{}\n",
+        "Column", "Type", "Nullable", "Constraint", "Default",
+    );
+    let separator = format!(
+        "{}\n",
+        "-".repeat(
+            name_w + type_w + nullable_w + constraint_w + "Default".len() + COLUMN_GAP.len() * 4,
+        )
+    );
+    let body: String = rows
+        .iter()
+        .map(|(name, data_type, nullable, constraint, default)| {
             format!(
-                "{:<30} {:<20} {:<10} {:<20} {}\n",
-                f.name, f.data_type, f.is_nullable, constraint, default
+                "{:<name_w$}{COLUMN_GAP}{:<type_w$}{COLUMN_GAP}{:<nullable_w$}{COLUMN_GAP}{:<constraint_w$}{COLUMN_GAP}{}\n",
+                name, data_type, nullable, constraint, default
             )
         })
         .collect();
-    format!("{header}{rows}")
+
+    format!("{header}{separator}{body}")
+}
+
+#[cfg(test)]
+mod test {
+    use super::format_fields;
+    use crate::db::repo::tables_repo::TableField;
+
+    #[test]
+    fn nullable_column_stays_aligned_with_long_type_values() {
+        let short = TableField {
+            name: "id".to_string(),
+            data_type: "integer".to_string(),
+            is_nullable: "NO".to_string(),
+            constraint_type: None,
+            default: None,
+        };
+        let long = TableField {
+            name: "payload".to_string(),
+            data_type: "character varying with very very long suffix".to_string(),
+            is_nullable: "YES".to_string(),
+            constraint_type: None,
+            default: None,
+        };
+
+        let rendered = format_fields(&[&short, &long]);
+        let lines: Vec<&str> = rendered.lines().collect();
+
+        let nullable_short = lines[2].find("NO").unwrap();
+        let nullable_long = lines[3].find("YES").unwrap();
+        assert_eq!(nullable_short, nullable_long);
+    }
+
+    #[test]
+    fn columns_have_wider_gap_between_each_other() {
+        let field = TableField {
+            name: "id".to_string(),
+            data_type: "integer".to_string(),
+            is_nullable: "NO".to_string(),
+            constraint_type: None,
+            default: None,
+        };
+
+        let rendered = format_fields(&[&field]);
+        let header = rendered.lines().next().unwrap();
+        let column_end = header.find("Column").unwrap() + "Column".len();
+        let type_start = header.find("Type").unwrap();
+        let nullable_start = header.find("Nullable").unwrap();
+        let constraint_start = header.find("Constraint").unwrap();
+        let default_start = header.find("Default").unwrap();
+
+        assert!(type_start - column_end >= 3);
+        assert!(nullable_start - (type_start + "Type".len()) >= 3);
+        assert!(constraint_start - (nullable_start + "Nullable".len()) >= 3);
+        assert!(default_start - (constraint_start + "Constraint".len()) >= 3);
+    }
 }
