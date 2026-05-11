@@ -1,34 +1,181 @@
 use crate::config::Connect;
 use crate::config::Connect::Postgres;
 use crate::db::repo::db_repo::{DbClient, DbError};
+use crate::db::repo::tables_repo::{Database, Schema, Table};
+use crate::state::connect::ConnectState;
+use std::collections::BTreeSet;
+
 #[derive(Debug)]
-/// TODO: Наверное нужно будет подтягивать их из какого-нибудь **config.toml**, реализуем в отдельном extern crate storage, который будет читать и сохранять конфиги подключений, а также добавлять новые
 pub struct AppState {
-    // Option потому что ну изначально-то нет никаого подключения
-    connections: Vec<Connect>,
-    current_db: Option<DbClient>,
+    pub connections: Vec<Connect>,
+    pub current_db: Option<DbClient>,
+    pub connect: ConnectState,
+    pub schemas_raw: Vec<Schema>,
+    pub schema_selected: usize,
+    pub table_selected: usize,
+    pub loaded_table: Option<Table>,
 }
 
 impl AppState {
-    // изначально никакого подключения нет, но есть список доступных конфигураций для подключения
     pub fn new(connections: Vec<Connect>) -> Self {
         AppState {
             connections,
             current_db: None,
+            connect: ConnectState::default(),
+            schemas_raw: Vec::new(),
+            schema_selected: 0,
+            table_selected: 0,
+            loaded_table: None,
         }
     }
-    /// Метод для подключения к базе данных по индексу из списка конфигураций, &mut self потому что мы будем менять состояние приложения, а не просто читать его, владение не передаем, так как мы не хотим, чтобы кто-то другой мог использовать это состояние после подключения, а также потому что мы не хотим, чтобы кто-то другой мог изменить это состояние после подключения
-    pub async fn connect(&mut self, idx: usize) -> Result<(), DbError> {
-        match &self.connections[idx] {
-            Postgres(_) => {
-                let db_client = DbClient::new(self.connections[idx].clone()).await?;
-                self.current_db = Some(db_client);
-            }
-        }
 
-        Ok(())
-    }
     pub fn add(&mut self, connection: Connect) {
         self.connections.push(connection);
+    }
+
+    /// Unique schema names sorted alphabetically.
+    pub fn schema_names(&self) -> Vec<String> {
+        self.schemas_raw
+            .iter()
+            .map(|s| s.schema.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    /// Table names within the given schema.
+    pub fn table_names_in_schema(&self, schema: &str) -> Vec<String> {
+        self.schemas_raw
+            .iter()
+            .filter(|s| s.schema == schema)
+            .map(|s| s.name.clone())
+            .collect()
+    }
+
+    /// The schema name at the current `schema_selected` index, if any.
+    pub fn selected_schema_name(&self) -> Option<String> {
+        self.schema_names().into_iter().nth(self.schema_selected)
+    }
+
+    /// The table name at the current `table_selected` index within selected schema.
+    pub fn selected_table_name(&self) -> Option<String> {
+        let schema = self.selected_schema_name()?;
+        self.table_names_in_schema(&schema)
+            .into_iter()
+            .nth(self.table_selected)
+    }
+
+    /// Connects to the database at `connect.selected` index.
+    pub async fn connect_selected(&mut self) -> Result<(), DbError> {
+        self.connect.error = None;
+        let idx = self.connect.selected;
+        match &self.connections[idx] {
+            Postgres(_) => match DbClient::new(self.connections[idx].clone()).await {
+                Ok(client) => {
+                    self.current_db = Some(client);
+                    Ok(())
+                }
+                Err(e) => {
+                    self.connect.error = Some(e.to_string());
+                    Err(e)
+                }
+            },
+        }
+    }
+
+    /// Loads all schemas from the active connection into `schemas_raw`.
+    pub async fn load_schemas(&mut self) -> Result<(), DbError> {
+        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+            return Err(DbError::NotFound("No active connection".to_string()));
+        };
+        self.schemas_raw = repo.get_schemas().await?;
+        self.schema_selected = 0;
+        self.table_selected = 0;
+        Ok(())
+    }
+
+    /// Loads full field details for the currently selected table.
+    pub async fn load_table(&mut self) -> Result<(), DbError> {
+        let table_name = self
+            .selected_table_name()
+            .ok_or_else(|| DbError::NotFound("No table selected".to_string()))?;
+        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+            return Err(DbError::NotFound("No active connection".to_string()));
+        };
+        let mut tables = repo.get_tables(vec![table_name]).await?;
+        self.loaded_table = tables.pop();
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::config::PostgresConfig;
+
+    fn pg_connect() -> Connect {
+        Connect::Postgres(PostgresConfig {
+            host: "h".to_string(),
+            user: "u".to_string(),
+            db_name: "d".to_string(),
+            port: 5432,
+            password: None,
+        })
+    }
+
+    #[test]
+    fn schema_names_deduped_and_sorted() {
+        let mut state = AppState::new(vec![pg_connect()]);
+        state.schemas_raw = vec![
+            Schema {
+                catalog: "d".to_string(),
+                schema: "public".to_string(),
+                name: "users".to_string(),
+            },
+            Schema {
+                catalog: "d".to_string(),
+                schema: "public".to_string(),
+                name: "posts".to_string(),
+            },
+            Schema {
+                catalog: "d".to_string(),
+                schema: "auth".to_string(),
+                name: "tokens".to_string(),
+            },
+        ];
+        let names = state.schema_names();
+        assert_eq!(names, vec!["auth", "public"]);
+    }
+
+    #[test]
+    fn table_names_for_schema() {
+        let mut state = AppState::new(vec![pg_connect()]);
+        state.schemas_raw = vec![
+            Schema {
+                catalog: "d".to_string(),
+                schema: "public".to_string(),
+                name: "users".to_string(),
+            },
+            Schema {
+                catalog: "d".to_string(),
+                schema: "public".to_string(),
+                name: "posts".to_string(),
+            },
+            Schema {
+                catalog: "d".to_string(),
+                schema: "auth".to_string(),
+                name: "tokens".to_string(),
+            },
+        ];
+        let tables = state.table_names_in_schema("public");
+        assert!(tables.contains(&"users".to_string()));
+        assert!(tables.contains(&"posts".to_string()));
+        assert_eq!(tables.len(), 2);
+    }
+
+    #[test]
+    fn selected_schema_name_returns_none_when_empty() {
+        let state = AppState::new(vec![pg_connect()]);
+        assert_eq!(state.selected_schema_name(), None);
     }
 }
