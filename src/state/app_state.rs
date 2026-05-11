@@ -3,6 +3,7 @@ use crate::config::Connect::Postgres;
 use crate::db::repo::db_repo::{DbClient, DbError};
 use crate::db::repo::tables_repo::{Database, Schema, Table};
 use crate::state::connect::ConnectState;
+use crate::state::form::FormState;
 use std::collections::BTreeSet;
 
 #[derive(Debug)]
@@ -10,6 +11,7 @@ pub struct AppState {
     pub connections: Vec<Connect>,
     pub current_db: Option<DbClient>,
     pub connect: ConnectState,
+    pub form: FormState,
     pub schemas_raw: Vec<Schema>,
     pub schema_selected: usize,
     pub table_selected: usize,
@@ -22,6 +24,7 @@ impl AppState {
             connections,
             current_db: None,
             connect: ConnectState::default(),
+            form: FormState::default(),
             schemas_raw: Vec::new(),
             schema_selected: 0,
             table_selected: 0,

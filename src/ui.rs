@@ -1,22 +1,82 @@
 use crate::config::Connect;
 use crate::db::repo::tables_repo::Table;
 use crate::state::app_state::AppState;
+use crate::state::form::FIELD_LABELS;
 use crate::state::router::{Router, Screen};
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout},
-    style::Style,
+    layout::{Constraint, Layout, Position},
+    style::{Style, Stylize},
     widgets::{Block, List, ListItem, ListState, Paragraph},
 };
 
 pub fn render(frame: &mut Frame, state: &AppState, router: &Router) {
     match router.current() {
         Some(Screen::Connect) => render_connect(frame, state),
+        Some(Screen::AddConnection) => render_add_connection(frame, state),
         Some(Screen::Schemas) => render_schemas(frame, state),
         Some(Screen::Tables) => render_tables(frame, state),
         Some(Screen::TableView) => render_table_view(frame, state),
         None => {}
     }
+}
+
+fn render_add_connection(frame: &mut Frame, state: &AppState) {
+    let area = frame.area();
+
+    // Outer wrapper with title and hint
+    let outer = Block::bordered()
+        .title(" Add Connection (j/k or Tab navigate fields, Enter save, Esc cancel) ");
+
+    let inner_area = outer.inner(area);
+    frame.render_widget(outer, area);
+
+    // 5 field rows (3 lines each: border top + content + border bottom) + 1 status row (3 lines)
+    let field_height = 3u16;
+    let constraints: Vec<Constraint> = (0..FIELD_LABELS.len())
+        .map(|_| Constraint::Length(field_height))
+        .chain(std::iter::once(Constraint::Length(3)))
+        .collect();
+
+    let chunks = Layout::vertical(constraints).split(inner_area);
+
+    for (i, label) in FIELD_LABELS.iter().enumerate() {
+        let is_focused = i == state.form.focused;
+
+        let display_value = if i == 4 {
+            // password: mask with asterisks
+            "*".repeat(state.form.values[i].len())
+        } else {
+            state.form.values[i].clone()
+        };
+
+        let block = if is_focused {
+            Block::bordered().title(format!(" {label} ")).bold()
+        } else {
+            Block::bordered().title(format!(" {label} "))
+        };
+
+        let paragraph = Paragraph::new(display_value.as_str()).block(block);
+        frame.render_widget(paragraph, chunks[i]);
+
+        // Place cursor at end of focused field (not for password field)
+        if is_focused && i != 4 {
+            let inner = chunks[i];
+            // content area starts 1 inside the border
+            let cursor_x = inner.x + 1 + state.form.values[i].len() as u16;
+            let cursor_y = inner.y + 1;
+            // clamp to field width
+            let max_x = inner.x + inner.width.saturating_sub(2);
+            frame.set_cursor_position(Position::new(cursor_x.min(max_x), cursor_y));
+        }
+    }
+
+    // Status row: validation error or empty
+    let status_text = state.form.error.as_deref().unwrap_or("");
+    frame.render_widget(
+        Paragraph::new(status_text).block(Block::bordered().title(" Status ")),
+        chunks[FIELD_LABELS.len()],
+    );
 }
 
 fn render_connect(frame: &mut Frame, state: &AppState) {

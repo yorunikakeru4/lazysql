@@ -1,6 +1,7 @@
 #[derive(Debug)]
 pub enum Screen {
     Connect,
+    AddConnection,
     Schemas,
     Tables,
     TableView,
