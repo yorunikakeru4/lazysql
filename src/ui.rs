@@ -2,12 +2,14 @@ use crate::config::Connect;
 use crate::db::repo::tables_repo::TableField;
 use crate::state::app_state::AppState;
 use crate::state::form::FIELD_LABELS;
+use crate::state::records::{DisplayMode, MAX_CELL_LEN, RecordsState};
 use crate::state::router::{Router, Screen};
+use crate::state::sql_input::SqlResult;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Position, Rect},
-    style::{Style, Stylize},
-    widgets::{Block, List, ListItem, ListState, Paragraph},
+    style::{Color, Style, Stylize},
+    widgets::{Block, Clear, List, ListItem, ListState, Paragraph},
 };
 
 pub fn render(frame: &mut Frame, state: &AppState, router: &Router) {
@@ -17,7 +19,18 @@ pub fn render(frame: &mut Frame, state: &AppState, router: &Router) {
         Some(Screen::Schemas) => render_schemas(frame, state),
         Some(Screen::Tables) => render_tables(frame, state),
         Some(Screen::TableView) => render_table_view(frame, state),
+        Some(Screen::Records) => render_records(frame, state),
         None => {}
+    }
+
+    // SQL input bar (overlay at bottom)
+    if state.sql_input.active {
+        render_sql_input_bar(frame, state);
+    }
+
+    // SQL result popup (centered overlay, always on top)
+    if state.sql_input.has_result() {
+        render_sql_result_popup(frame, state);
     }
 }
 
@@ -31,11 +44,11 @@ fn render_add_connection(frame: &mut Frame, state: &AppState) {
     let inner_area = outer.inner(area);
     frame.render_widget(outer, area);
 
-    // 5 field rows (3 lines each: border top + content + border bottom) + 1 status row (3 lines)
+    // 5 field rows (3 lines each) + 1 status row (1 line, no border)
     let field_height = 3u16;
     let constraints: Vec<Constraint> = (0..FIELD_LABELS.len())
         .map(|_| Constraint::Length(field_height))
-        .chain(std::iter::once(Constraint::Length(3)))
+        .chain(std::iter::once(Constraint::Length(1)))
         .collect();
 
     let chunks = Layout::vertical(constraints).split(inner_area);
@@ -71,12 +84,13 @@ fn render_add_connection(frame: &mut Frame, state: &AppState) {
         }
     }
 
-    // Status row: validation error or empty
-    let status_text = state.form.error.as_deref().unwrap_or("");
-    frame.render_widget(
-        Paragraph::new(status_text).block(Block::bordered().title(" Status ")),
-        chunks[FIELD_LABELS.len()],
-    );
+    // Status row: validation error (no border, red text)
+    if let Some(err) = &state.form.error {
+        frame.render_widget(
+            Paragraph::new(err.as_str()).style(Style::default().fg(Color::Red)),
+            chunks[FIELD_LABELS.len()],
+        );
+    }
 }
 
 fn render_connect(frame: &mut Frame, state: &AppState) {
@@ -227,6 +241,243 @@ fn render_table_view(frame: &mut Frame, state: &AppState) {
     }
 }
 
+/// Renders the SQL input bar at the bottom of the screen.
+fn render_sql_input_bar(frame: &mut Frame, state: &AppState) {
+    let area = frame.area();
+    // 3 lines for bordered input at the bottom
+    let bar_area = Rect {
+        x: area.x,
+        y: area.height.saturating_sub(3),
+        width: area.width,
+        height: 3,
+    };
+
+    frame.render_widget(Clear, bar_area);
+
+    let display_query = state.sql_input.query.replace('\n', " ↵ ");
+    let text = format!(":{}", display_query);
+    let paragraph = Paragraph::new(text.as_str())
+        .block(Block::bordered().title(" SQL (Shift+Enter newline, Esc cancel) "));
+    frame.render_widget(paragraph, bar_area);
+
+    // Cursor position: after the colon and query
+    let cursor_x = (bar_area.x + 1 + 1 + display_query.len() as u16)
+        .min(bar_area.x + bar_area.width.saturating_sub(2));
+    frame.set_cursor_position(Position::new(cursor_x, bar_area.y + 1));
+}
+
+/// Renders a centered popup showing SQL execution result.
+fn render_sql_result_popup(frame: &mut Frame, state: &AppState) {
+    let Some(result) = &state.sql_input.result else {
+        return;
+    };
+
+    let (title, body, color) = match result {
+        SqlResult::Success { rows_affected } => (
+            " Success ",
+            format!("Rows Affected: {}", rows_affected),
+            Color::Green,
+        ),
+        SqlResult::Rows { count } => (
+            " Success ",
+            format!("Rows Returned: {}", count),
+            Color::Green,
+        ),
+        SqlResult::Error(msg) => (" Error ", msg.clone(), Color::Red),
+    };
+
+    let popup_area = centered_rect(50, 5, frame.area());
+    frame.render_widget(Clear, popup_area);
+
+    let paragraph = Paragraph::new(format!("{}\n\nPress Enter to dismiss", body)).block(
+        Block::bordered()
+            .title(title)
+            .style(Style::default().fg(color)),
+    );
+    frame.render_widget(paragraph, popup_area);
+}
+
+/// Returns a centered Rect of given percentage width and fixed height.
+fn centered_rect(percent_width: u16, height: u16, area: Rect) -> Rect {
+    let popup_width = area.width * percent_width / 100;
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + (area.height.saturating_sub(height)) / 2;
+    Rect {
+        x: popup_x,
+        y: popup_y,
+        width: popup_width,
+        height,
+    }
+}
+
+fn render_records(frame: &mut Frame, state: &AppState) {
+    let area = frame.area();
+    // Layout: content + status bar (3 lines)
+    let chunks = Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).split(area);
+
+    let records = &state.records;
+    let title = match &records.source {
+        Some(crate::state::records::RecordsSource::Table { table, .. }) => {
+            format!(" Records: {} ", table)
+        }
+        Some(crate::state::records::RecordsSource::Query { .. }) => " Query Results ".to_string(),
+        None => " Records ".to_string(),
+    };
+
+    // Auto-expand when table is wider than available content area.
+    let available_width = chunks[0].width.saturating_sub(2);
+    let effective_mode = if records.display_mode == DisplayMode::Table
+        && records.min_table_width > available_width
+    {
+        DisplayMode::Expanded
+    } else {
+        records.display_mode
+    };
+
+    let content = match effective_mode {
+        DisplayMode::Table => format_records_table(records),
+        DisplayMode::Expanded => format_records_expanded(records),
+    };
+
+    frame.render_widget(
+        Paragraph::new(content).block(Block::bordered().title(format!(
+            "{} (h/← prev, l/→ next, e/t toggle, Esc back)",
+            title
+        ))),
+        chunks[0],
+    );
+
+    // Status bar: pagination info
+    let start_row = records.offset + 1;
+    let end_row = (records.offset + records.rows.len() as u64).min(records.total_count);
+    let mode_indicator = match (records.display_mode, effective_mode) {
+        (DisplayMode::Table, DisplayMode::Expanded) => "Expanded (auto)",
+        (_, DisplayMode::Expanded) => "Expanded",
+        (_, DisplayMode::Table) => "Table",
+    };
+    let status = format!(
+        "Page {}/{} | Rows {}-{} of {} | {}",
+        records.current_page(),
+        records.total_pages(),
+        start_row,
+        end_row,
+        records.total_count,
+        mode_indicator
+    );
+    frame.render_widget(
+        Paragraph::new(status).block(Block::bordered().title(" Status ")),
+        chunks[1],
+    );
+}
+
+/// Truncates a cell value to MAX_CELL_LEN characters, appending "..." if cut.
+fn truncate_cell(s: &str) -> String {
+    if s.chars().count() <= MAX_CELL_LEN {
+        return s.to_string();
+    }
+    let boundary = s
+        .char_indices()
+        .nth(MAX_CELL_LEN - 3)
+        .map(|(i, _)| i)
+        .unwrap_or(s.len());
+    format!("{}...", &s[..boundary])
+}
+
+/// Formats records as a table with aligned columns.
+fn format_records_table(records: &RecordsState) -> String {
+    const COL_GAP: &str = "   ";
+
+    if records.columns.is_empty() {
+        return "No data".to_string();
+    }
+
+    // Calculate column widths (capped at MAX_CELL_LEN)
+    let mut widths: Vec<usize> = records.columns.iter().map(|c| c.name.len()).collect();
+    for row in &records.rows {
+        for (i, cell) in row.iter().enumerate() {
+            if i < widths.len() {
+                let cell_len = cell
+                    .as_ref()
+                    .map(|s| s.chars().count().min(MAX_CELL_LEN))
+                    .unwrap_or(4); // "NULL"
+                widths[i] = widths[i].max(cell_len);
+            }
+        }
+    }
+
+    // Header
+    let header: String = records
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(i, col)| format!("{:<width$}", col.name, width = widths[i]))
+        .collect::<Vec<_>>()
+        .join(COL_GAP);
+
+    // Separator
+    let separator = "-".repeat(widths.iter().sum::<usize>() + COL_GAP.len() * (widths.len() - 1));
+
+    // Rows
+    let rows: String = records
+        .rows
+        .iter()
+        .map(|row| {
+            row.iter()
+                .enumerate()
+                .map(|(i, cell)| {
+                    let raw = cell.as_ref().map(|s| s.as_str()).unwrap_or("NULL");
+                    let val = truncate_cell(raw);
+                    let w = widths.get(i).copied().unwrap_or(val.chars().count());
+                    format!("{:<width$}", val, width = w)
+                })
+                .collect::<Vec<_>>()
+                .join(COL_GAP)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!("{}\n{}\n{}", header, separator, rows)
+}
+
+/// Formats records in expanded vertical format (pgcli-style).
+fn format_records_expanded(records: &RecordsState) -> String {
+    if records.columns.is_empty() || records.rows.is_empty() {
+        return "No data".to_string();
+    }
+
+    let max_col_name = records
+        .columns
+        .iter()
+        .map(|c| c.name.len())
+        .max()
+        .unwrap_or(0);
+
+    let mut output = String::new();
+    for (row_idx, row) in records.rows.iter().enumerate() {
+        let record_num = records.offset + row_idx as u64 + 1;
+        let header = format!("-[ RECORD {} ]", record_num);
+        let dashes = "-".repeat(40usize.saturating_sub(header.len()));
+        output.push_str(&format!("{}{}\n", header, dashes));
+
+        for (col_idx, col) in records.columns.iter().enumerate() {
+            let raw = row
+                .get(col_idx)
+                .and_then(|v| v.as_ref())
+                .map(|s| s.as_str())
+                .unwrap_or("NULL");
+            let val = truncate_cell(raw);
+            output.push_str(&format!(
+                "{:<width$} | {}\n",
+                col.name,
+                val,
+                width = max_col_name
+            ));
+        }
+    }
+
+    output
+}
+
 fn format_fields(fields: &[&TableField]) -> String {
     const COLUMN_GAP: &str = "   ";
 
@@ -291,8 +542,8 @@ fn format_fields(fields: &[&TableField]) -> String {
 
 #[cfg(test)]
 mod test {
-    use super::format_fields;
-    use crate::db::repo::tables_repo::TableField;
+    use super::*;
+    use crate::db::repo::tables_repo::{ColumnInfo, TableField};
 
     #[test]
     fn nullable_column_stays_aligned_with_long_type_values() {
@@ -341,5 +592,84 @@ mod test {
         assert!(nullable_start - (type_start + "Type".len()) >= 3);
         assert!(constraint_start - (nullable_start + "Nullable".len()) >= 3);
         assert!(default_start - (constraint_start + "Constraint".len()) >= 3);
+    }
+
+    #[test]
+    fn format_records_table_aligns_columns() {
+        let records = RecordsState {
+            columns: vec![
+                ColumnInfo {
+                    name: "id".into(),
+                    data_type: "int4".into(),
+                },
+                ColumnInfo {
+                    name: "name".into(),
+                    data_type: "text".into(),
+                },
+            ],
+            rows: vec![
+                vec![Some("1".into()), Some("Alice".into())],
+                vec![Some("2".into()), Some("Bob".into())],
+            ],
+            ..Default::default()
+        };
+        let output = format_records_table(&records);
+        assert!(output.contains("id"));
+        assert!(output.contains("name"));
+        assert!(output.contains("Alice"));
+        assert!(output.contains("Bob"));
+    }
+
+    #[test]
+    fn format_records_expanded_shows_record_headers() {
+        let records = RecordsState {
+            columns: vec![ColumnInfo {
+                name: "id".into(),
+                data_type: "int4".into(),
+            }],
+            rows: vec![vec![Some("1".into())]],
+            offset: 0,
+            ..Default::default()
+        };
+        let output = format_records_expanded(&records);
+        assert!(output.contains("-[ RECORD 1 ]"));
+        assert!(output.contains("id"));
+        assert!(output.contains("| 1"));
+    }
+
+    #[test]
+    fn format_records_table_handles_null() {
+        let records = RecordsState {
+            columns: vec![ColumnInfo {
+                name: "val".into(),
+                data_type: "text".into(),
+            }],
+            rows: vec![vec![None]],
+            ..Default::default()
+        };
+        let output = format_records_table(&records);
+        assert!(output.contains("NULL"));
+    }
+
+    #[test]
+    fn format_records_expanded_handles_null() {
+        let records = RecordsState {
+            columns: vec![ColumnInfo {
+                name: "val".into(),
+                data_type: "text".into(),
+            }],
+            rows: vec![vec![None]],
+            offset: 0,
+            ..Default::default()
+        };
+        let output = format_records_expanded(&records);
+        assert!(output.contains("NULL"));
+    }
+
+    #[test]
+    fn format_records_table_empty_returns_no_data() {
+        let records = RecordsState::default();
+        let output = format_records_table(&records);
+        assert_eq!(output, "No data");
     }
 }

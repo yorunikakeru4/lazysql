@@ -1,10 +1,12 @@
 use crate::config::Connect;
 use crate::config::Connect::Postgres;
 use crate::db::repo::db_repo::{DbClient, DbError};
-use crate::db::repo::tables_repo::{Database, Schema, Table};
+use crate::db::repo::tables_repo::{Database, Schema, SqlExecuteResult, Table};
 use crate::state::connect::ConnectState;
 use crate::state::form::FormState;
+use crate::state::records::{RecordsSource, RecordsState};
 use crate::state::search::SearchState;
+use crate::state::sql_input::{SqlInputState, SqlResult};
 use std::collections::BTreeSet;
 
 #[derive(Debug)]
@@ -14,6 +16,8 @@ pub struct AppState {
     pub connect: ConnectState,
     pub form: FormState,
     pub search: SearchState,
+    pub sql_input: SqlInputState,
+    pub records: RecordsState,
     pub schemas_raw: Vec<Schema>,
     pub schema_selected: usize,
     pub table_selected: usize,
@@ -28,6 +32,8 @@ impl AppState {
             connect: ConnectState::default(),
             form: FormState::default(),
             search: SearchState::default(),
+            sql_input: SqlInputState::default(),
+            records: RecordsState::default(),
             schemas_raw: Vec::new(),
             schema_selected: 0,
             table_selected: 0,
@@ -141,6 +147,154 @@ impl AppState {
         };
         let mut tables = repo.get_tables(vec![name]).await?;
         self.loaded_table = tables.pop();
+        Ok(())
+    }
+
+    /// Executes the SQL query in `sql_input.query` and stores the result.
+    pub async fn execute_sql_input(&mut self) {
+        let query = self.sql_input.query.trim().to_string();
+        if query.is_empty() {
+            self.sql_input.reset();
+            return;
+        }
+
+        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+            self.sql_input.result = Some(SqlResult::Error("No active connection".to_string()));
+            return;
+        };
+
+        match repo.execute_sql(&query).await {
+            Ok(SqlExecuteResult::RowsAffected(n)) => {
+                self.sql_input.result = Some(SqlResult::Success { rows_affected: n });
+            }
+            Ok(SqlExecuteResult::RowsReturned(n)) => {
+                self.sql_input.result = Some(SqlResult::Rows { count: n });
+            }
+            Err(e) => {
+                self.sql_input.result = Some(SqlResult::Error(e.to_string()));
+            }
+        }
+    }
+
+    /// Loads records for the currently selected table.
+    /// `terminal_height` / `terminal_width` are used to pick the right
+    /// `rows_per_page` for table vs expanded display mode.
+    pub async fn load_table_records(
+        &mut self,
+        terminal_height: u16,
+        terminal_width: u16,
+    ) -> Result<(), DbError> {
+        let Some(table) = &self.loaded_table else {
+            return Err(DbError::NotFound("No table loaded".to_string()));
+        };
+        let schema = self
+            .selected_schema_name()
+            .unwrap_or_else(|| "public".to_string());
+        let table_name = table.name.clone();
+
+        // height - borders(2) - header(1) - separator(1) - status_bar(3)
+        let table_rpp = terminal_height.saturating_sub(7).max(1);
+
+        self.records = RecordsState::for_table(schema.clone(), table_name.clone());
+        self.records.rows_per_page = table_rpp;
+
+        {
+            let Some(DbClient::Postgres(repo)) = &self.current_db else {
+                return Err(DbError::NotFound("No active connection".to_string()));
+            };
+            let result = repo.fetch_rows(&schema, &table_name, table_rpp, 0).await?;
+            self.records.update_from_result(result);
+        }
+
+        // If the table is too wide for the terminal, it will auto-expand at
+        // render time. Recalculate rows_per_page so each page fits the screen
+        // in expanded layout (N columns + 1 header line per record).
+        let content_width = terminal_width.saturating_sub(2);
+        if self.records.min_table_width > content_width {
+            let n_cols = self.records.columns.len() as u16;
+            let available = terminal_height.saturating_sub(5); // borders + status bar
+            let lines_per_record = n_cols + 1;
+            let expanded_rpp = (available / lines_per_record).max(1);
+            if expanded_rpp != table_rpp {
+                self.records.rows_per_page = expanded_rpp;
+                let Some(DbClient::Postgres(repo)) = &self.current_db else {
+                    return Err(DbError::NotFound("No active connection".to_string()));
+                };
+                let result = repo
+                    .fetch_rows(&schema, &table_name, expanded_rpp, 0)
+                    .await?;
+                self.records.update_from_result(result);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Fetches the current page of records based on offset.
+    pub async fn fetch_records_page(&mut self) -> Result<(), DbError> {
+        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+            return Err(DbError::NotFound("No active connection".to_string()));
+        };
+
+        let Some(source) = &self.records.source else {
+            return Err(DbError::NotFound("No records source".to_string()));
+        };
+
+        let limit = self.records.rows_per_page;
+        let offset = self.records.offset;
+
+        let result = match source.clone() {
+            RecordsSource::Table { schema, table } => {
+                repo.fetch_rows(&schema, &table, limit, offset).await?
+            }
+            RecordsSource::Query { sql } => repo.execute_sql_with_rows(&sql, limit, offset).await?,
+        };
+
+        self.records.update_from_result(result);
+        Ok(())
+    }
+
+    /// Executes the SQL from `sql_input` and loads results into records state for viewing.
+    pub async fn execute_sql_for_records(
+        &mut self,
+        terminal_height: u16,
+        terminal_width: u16,
+    ) -> Result<(), DbError> {
+        let query = self.sql_input.query.trim().to_string();
+        if query.is_empty() {
+            return Err(DbError::NotFound("Empty query".to_string()));
+        }
+
+        let table_rpp = terminal_height.saturating_sub(7).max(1);
+
+        self.records = RecordsState::for_query(query.clone());
+        self.records.rows_per_page = table_rpp;
+
+        {
+            let Some(DbClient::Postgres(repo)) = &self.current_db else {
+                return Err(DbError::NotFound("No active connection".to_string()));
+            };
+            let result = repo.execute_sql_with_rows(&query, table_rpp, 0).await?;
+            self.records.update_from_result(result);
+        }
+
+        // Same auto-expand rpp logic as load_table_records.
+        let content_width = terminal_width.saturating_sub(2);
+        if self.records.min_table_width > content_width {
+            let n_cols = self.records.columns.len() as u16;
+            let available = terminal_height.saturating_sub(5);
+            let lines_per_record = n_cols + 1;
+            let expanded_rpp = (available / lines_per_record).max(1);
+            if expanded_rpp != table_rpp {
+                self.records.rows_per_page = expanded_rpp;
+                let Some(DbClient::Postgres(repo)) = &self.current_db else {
+                    return Err(DbError::NotFound("No active connection".to_string()));
+                };
+                let result = repo.execute_sql_with_rows(&query, expanded_rpp, 0).await?;
+                self.records.update_from_result(result);
+            }
+        }
+
         Ok(())
     }
 }

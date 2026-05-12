@@ -1,3 +1,4 @@
+/// Screens available in the TUI navigation stack.
 #[derive(Debug)]
 pub enum Screen {
     Connect,
@@ -5,6 +6,7 @@ pub enum Screen {
     Schemas,
     Tables,
     TableView,
+    Records,
 }
 
 #[derive(Debug)]

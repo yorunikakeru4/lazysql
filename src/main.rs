@@ -11,6 +11,7 @@ use crossterm::{
 };
 use futures::StreamExt;
 use ratatui::{Terminal, prelude::CrosstermBackend};
+
 use state::{
     app_state::AppState,
     router::{Router, Screen},
@@ -75,6 +76,49 @@ async fn run(
                 continue;
             }
             // Not a gg sequence — fall through to normal handling below.
+        }
+
+        // SQL result popup: Enter to dismiss
+        if state.sql_input.has_result() {
+            if key.code == KeyCode::Enter || key.code == KeyCode::Esc {
+                state.sql_input.dismiss_result();
+            }
+            continue;
+        }
+
+        // SQL input mode
+        if state.sql_input.active {
+            match key.code {
+                KeyCode::Esc => state.sql_input.reset(),
+                KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    state.sql_input.query.push('\n');
+                }
+                KeyCode::Enter => {
+                    state.sql_input.close();
+                    let query = state.sql_input.query.trim().to_string();
+                    if crate::db::postgres::tables::is_returning_query(&query) {
+                        let size = terminal.size()?;
+                        match state.execute_sql_for_records(size.height, size.width).await {
+                            Ok(_) => {
+                                state.sql_input.reset();
+                                router.push(Screen::Records);
+                            }
+                            Err(e) => {
+                                state.sql_input.result =
+                                    Some(state::sql_input::SqlResult::Error(e.to_string()));
+                            }
+                        }
+                    } else {
+                        state.execute_sql_input().await;
+                    }
+                }
+                KeyCode::Backspace => {
+                    state.sql_input.query.pop();
+                }
+                KeyCode::Char(c) => state.sql_input.query.push(c),
+                _ => {}
+            }
+            continue;
         }
 
         // Search input mode: capture all keys for the query.
@@ -223,6 +267,11 @@ async fn run(
                     }
                     KeyCode::Char('g') => pending_g = true,
                     KeyCode::Char('/') => state.search.open(),
+                    KeyCode::Char(':') | KeyCode::Char('с') => {
+                        if state.current_db.is_some() {
+                            state.sql_input.open();
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -262,6 +311,11 @@ async fn run(
                     }
                     KeyCode::Char('g') => pending_g = true,
                     KeyCode::Char('/') => state.search.open(),
+                    KeyCode::Char(':') | KeyCode::Char('с') => {
+                        if state.current_db.is_some() {
+                            state.sql_input.open();
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -272,6 +326,41 @@ async fn run(
                     router.pop();
                 }
                 KeyCode::Char('/') => state.search.open(),
+                KeyCode::Char(':') | KeyCode::Char('с') => {
+                    if state.current_db.is_some() {
+                        state.sql_input.open();
+                    }
+                }
+                KeyCode::Char('s') => {
+                    let size = terminal.size()?;
+                    if state
+                        .load_table_records(size.height, size.width)
+                        .await
+                        .is_ok()
+                    {
+                        router.push(Screen::Records);
+                    }
+                }
+                _ => {}
+            },
+
+            Some(Screen::Records) => match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    state.records.reset();
+                    router.pop();
+                }
+                KeyCode::Char('h') | KeyCode::Left => {
+                    if state.records.has_prev_page() {
+                        state.records.prev_page();
+                        let _ = state.fetch_records_page().await;
+                    }
+                }
+                KeyCode::Char('l') | KeyCode::Right => {
+                    if state.records.has_next_page() {
+                        state.records.next_page();
+                        let _ = state.fetch_records_page().await;
+                    }
+                }
                 _ => {}
             },
 

@@ -166,6 +166,17 @@ Prefer implementing `Display`, `From`, `TryFrom` over ad-hoc conversion methods.
 
 Use `u16` for port numbers (`PostgresConfig::port`), not `u32`.
 
+### TDD (Test-Driven Development)
+
+Write tests BEFORE implementation:
+1. Write failing test defining expected behavior
+2. Implement minimal code to pass
+3. Refactor if needed
+4. Repeat
+
+Test location: `#[cfg(test)] mod test` at bottom of each file.
+Integration tests requiring DB: run via `just test`.
+
 ## Adding a New DB Backend
 
 1. Add a variant to `Connect` and `DbKind` in `config.rs`.
