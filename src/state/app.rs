@@ -1,9 +1,10 @@
 use crate::config::Connect;
 use crate::config::Connect::Postgres;
 use crate::db::repo::db_repo::{DbClient, DbError};
-use crate::db::repo::tables_repo::{Database, Schema, SqlExecuteResult, Table};
-use crate::state::connect::ConnectState;
-use crate::state::form::FormState;
+use crate::db::repo::tables_repo::{
+    Database, FetchRowsResult, SqlExecuteOptions, SqlExecuteResult, SqlPage, Table, TableRef,
+};
+use crate::state::connection::{ConnectState, FormState};
 use crate::state::records::{RecordsSource, RecordsState};
 use crate::state::search::SearchState;
 use crate::state::sql_input::{SqlInputState, SqlResult};
@@ -18,7 +19,7 @@ pub struct AppState {
     pub search: SearchState,
     pub sql_input: SqlInputState,
     pub records: RecordsState,
-    pub schemas_raw: Vec<Schema>,
+    pub schemas_raw: Vec<TableRef>,
     pub schema_selected: usize,
     pub table_selected: usize,
     pub loaded_table: Option<Table>,
@@ -53,14 +54,11 @@ impl AppState {
 
     /// Table names within the given schema.
     pub fn table_names_in_schema(&self, schema: &str) -> Vec<String> {
-        let mut names: Vec<String> = self
-            .schemas_raw
+        self.schemas_raw
             .iter()
             .filter(|s| s.schema == schema)
             .map(|s| s.name.clone())
-            .collect();
-        names.sort();
-        names
+            .collect()
     }
 
     /// Schema names filtered by `search.query` (case-insensitive, empty query = all).
@@ -167,8 +165,10 @@ impl AppState {
             Ok(SqlExecuteResult::RowsAffected(n)) => {
                 self.sql_input.result = Some(SqlResult::Success { rows_affected: n });
             }
-            Ok(SqlExecuteResult::RowsReturned(n)) => {
-                self.sql_input.result = Some(SqlResult::Rows { count: n });
+            Ok(SqlExecuteResult::RowsReturned(result)) => {
+                self.sql_input.result = Some(SqlResult::Rows {
+                    count: result.total_count as usize,
+                });
             }
             Err(e) => {
                 self.sql_input.result = Some(SqlResult::Error(e.to_string()));
@@ -177,13 +177,8 @@ impl AppState {
     }
 
     /// Loads records for the currently selected table.
-    /// `terminal_height` / `terminal_width` are used to pick the right
-    /// `rows_per_page` for table vs expanded display mode.
-    pub async fn load_table_records(
-        &mut self,
-        terminal_height: u16,
-        terminal_width: u16,
-    ) -> Result<(), DbError> {
+    /// `terminal_height` is used to pick the right `rows_per_page`.
+    pub async fn load_table_records(&mut self, terminal_height: u16) -> Result<(), DbError> {
         let Some(table) = &self.loaded_table else {
             return Err(DbError::NotFound("No table loaded".to_string()));
         };
@@ -206,27 +201,6 @@ impl AppState {
             self.records.update_from_result(result);
         }
 
-        // If the table is too wide for the terminal, it will auto-expand at
-        // render time. Recalculate rows_per_page so each page fits the screen
-        // in expanded layout (N columns + 1 header line per record).
-        let content_width = terminal_width.saturating_sub(2);
-        if self.records.min_table_width > content_width {
-            let n_cols = self.records.columns.len() as u16;
-            let available = terminal_height.saturating_sub(5); // borders + status bar
-            let lines_per_record = n_cols + 1;
-            let expanded_rpp = (available / lines_per_record).max(1);
-            if expanded_rpp != table_rpp {
-                self.records.rows_per_page = expanded_rpp;
-                let Some(DbClient::Postgres(repo)) = &self.current_db else {
-                    return Err(DbError::NotFound("No active connection".to_string()));
-                };
-                let result = repo
-                    .fetch_rows(&schema, &table_name, expanded_rpp, 0)
-                    .await?;
-                self.records.update_from_result(result);
-            }
-        }
-
         Ok(())
     }
 
@@ -247,7 +221,9 @@ impl AppState {
             RecordsSource::Table { schema, table } => {
                 repo.fetch_rows(&schema, &table, limit, offset).await?
             }
-            RecordsSource::Query { sql } => repo.execute_sql_with_rows(&sql, limit, offset).await?,
+            RecordsSource::Query { sql } => {
+                execute_sql_rows(repo, &sql, SqlPage { limit, offset }).await?
+            }
         };
 
         self.records.update_from_result(result);
@@ -255,11 +231,7 @@ impl AppState {
     }
 
     /// Executes the SQL from `sql_input` and loads results into records state for viewing.
-    pub async fn execute_sql_for_records(
-        &mut self,
-        terminal_height: u16,
-        terminal_width: u16,
-    ) -> Result<(), DbError> {
+    pub async fn execute_sql_for_records(&mut self, terminal_height: u16) -> Result<(), DbError> {
         let query = self.sql_input.query.trim().to_string();
         if query.is_empty() {
             return Err(DbError::NotFound("Empty query".to_string()));
@@ -274,28 +246,35 @@ impl AppState {
             let Some(DbClient::Postgres(repo)) = &self.current_db else {
                 return Err(DbError::NotFound("No active connection".to_string()));
             };
-            let result = repo.execute_sql_with_rows(&query, table_rpp, 0).await?;
+            let result = execute_sql_rows(
+                repo,
+                &query,
+                SqlPage {
+                    limit: table_rpp,
+                    offset: 0,
+                },
+            )
+            .await?;
             self.records.update_from_result(result);
         }
 
-        // Same auto-expand rpp logic as load_table_records.
-        let content_width = terminal_width.saturating_sub(2);
-        if self.records.min_table_width > content_width {
-            let n_cols = self.records.columns.len() as u16;
-            let available = terminal_height.saturating_sub(5);
-            let lines_per_record = n_cols + 1;
-            let expanded_rpp = (available / lines_per_record).max(1);
-            if expanded_rpp != table_rpp {
-                self.records.rows_per_page = expanded_rpp;
-                let Some(DbClient::Postgres(repo)) = &self.current_db else {
-                    return Err(DbError::NotFound("No active connection".to_string()));
-                };
-                let result = repo.execute_sql_with_rows(&query, expanded_rpp, 0).await?;
-                self.records.update_from_result(result);
-            }
-        }
-
         Ok(())
+    }
+}
+
+async fn execute_sql_rows(
+    repo: &crate::db::postgres::init::PostgresRepo,
+    query: &str,
+    page: SqlPage,
+) -> Result<FetchRowsResult, DbError> {
+    match repo
+        .execute_sql_with_options(query, Some(SqlExecuteOptions { page: Some(page) }))
+        .await?
+    {
+        SqlExecuteResult::RowsReturned(result) => Ok(result),
+        SqlExecuteResult::RowsAffected(_) => Err(DbError::NotFound(
+            "SQL did not return rows for records view".to_string(),
+        )),
     }
 }
 
@@ -318,18 +297,15 @@ mod test {
     fn schema_names_deduped_and_sorted() {
         let mut state = AppState::new(vec![pg_connect()]);
         state.schemas_raw = vec![
-            Schema {
-                catalog: "d".to_string(),
+            TableRef {
                 schema: "public".to_string(),
                 name: "users".to_string(),
             },
-            Schema {
-                catalog: "d".to_string(),
+            TableRef {
                 schema: "public".to_string(),
                 name: "posts".to_string(),
             },
-            Schema {
-                catalog: "d".to_string(),
+            TableRef {
                 schema: "auth".to_string(),
                 name: "tokens".to_string(),
             },
@@ -342,18 +318,15 @@ mod test {
     fn table_names_for_schema() {
         let mut state = AppState::new(vec![pg_connect()]);
         state.schemas_raw = vec![
-            Schema {
-                catalog: "d".to_string(),
+            TableRef {
                 schema: "public".to_string(),
                 name: "users".to_string(),
             },
-            Schema {
-                catalog: "d".to_string(),
+            TableRef {
                 schema: "public".to_string(),
                 name: "posts".to_string(),
             },
-            Schema {
-                catalog: "d".to_string(),
+            TableRef {
                 schema: "auth".to_string(),
                 name: "tokens".to_string(),
             },
@@ -382,13 +355,11 @@ mod test {
     fn filtered_schema_names_empty_query_returns_all() {
         let mut state = AppState::new(vec![pg_connect()]);
         state.schemas_raw = vec![
-            Schema {
-                catalog: "d".to_string(),
+            TableRef {
                 schema: "public".to_string(),
                 name: "users".to_string(),
             },
-            Schema {
-                catalog: "d".to_string(),
+            TableRef {
                 schema: "auth".to_string(),
                 name: "tokens".to_string(),
             },
@@ -400,13 +371,11 @@ mod test {
     fn filtered_schema_names_filters_by_query() {
         let mut state = AppState::new(vec![pg_connect()]);
         state.schemas_raw = vec![
-            Schema {
-                catalog: "d".to_string(),
+            TableRef {
                 schema: "public".to_string(),
                 name: "users".to_string(),
             },
-            Schema {
-                catalog: "d".to_string(),
+            TableRef {
                 schema: "auth".to_string(),
                 name: "tokens".to_string(),
             },
@@ -419,13 +388,11 @@ mod test {
     fn filtered_table_names_filters_by_query() {
         let mut state = AppState::new(vec![pg_connect()]);
         state.schemas_raw = vec![
-            Schema {
-                catalog: "d".to_string(),
+            TableRef {
                 schema: "public".to_string(),
                 name: "users".to_string(),
             },
-            Schema {
-                catalog: "d".to_string(),
+            TableRef {
                 schema: "public".to_string(),
                 name: "posts".to_string(),
             },

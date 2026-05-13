@@ -1,8 +1,8 @@
 use crate::db::postgres::init::PostgresRepo;
 use crate::db::repo::db_repo::DbError;
 use crate::db::repo::tables_repo::{
-    ColumnInfo, Database, FetchRowsResult, RowData, Schema, SqlExecuteResult, Table, TableField,
-    parse_constraint,
+    ColumnInfo, Database, FetchRowsResult, RowData, SqlExecuteOptions, SqlExecuteResult, SqlPage,
+    Table, TableField, TableRef, parse_constraint,
 };
 use sqlparser::ast::Statement;
 use sqlparser::dialect::PostgreSqlDialect;
@@ -10,6 +10,7 @@ use sqlparser::parser::Parser;
 use std::collections::HashMap;
 
 /// Detects if SQL returns rows (SELECT-like) using sqlparser.
+// TODO: this is a heuristic to route to query vs execute; it may misclassify some statements (e.g. DDL with RETURNING), but should be correct for common cases and let DB report errors for edge cases.
 pub fn is_returning_query(sql: &str) -> bool {
     let dialect = PostgreSqlDialect {};
     let Ok(statements) = Parser::parse_sql(&dialect, sql) else {
@@ -19,6 +20,62 @@ pub fn is_returning_query(sql: &str) -> bool {
         return false;
     };
     matches!(stmt, Statement::Query(_) | Statement::Explain { .. })
+}
+
+impl PostgresRepo {
+    async fn fetch_query_rows(
+        &self,
+        sql: &str,
+        page: Option<SqlPage>,
+    ) -> Result<FetchRowsResult, DbError> {
+        let Some(page) = page else {
+            let stmt = self.client.prepare(sql).await.map_err(DbError::Postgres)?;
+            let columns = columns_from_statement(&stmt);
+            let rows = self
+                .client
+                .query(&stmt, &[])
+                .await
+                .map_err(DbError::Postgres)?;
+            let data = rows_to_data(&rows);
+
+            return Ok(FetchRowsResult {
+                columns,
+                total_count: data.len() as u64,
+                rows: data,
+            });
+        };
+
+        let count_sql = format!("SELECT COUNT(*) FROM ({}) AS _subq", sql);
+        let count_row = self
+            .client
+            .query_one(&count_sql, &[])
+            .await
+            .map_err(DbError::Postgres)?;
+        let total_count: i64 = count_row.get(0);
+
+        let data_sql = format!(
+            "SELECT * FROM ({}) AS _subq LIMIT {} OFFSET {}",
+            sql, page.limit, page.offset
+        );
+
+        let stmt = self
+            .client
+            .prepare(&data_sql)
+            .await
+            .map_err(DbError::Postgres)?;
+        let columns = columns_from_statement(&stmt);
+        let rows = self
+            .client
+            .query(&stmt, &[])
+            .await
+            .map_err(DbError::Postgres)?;
+
+        Ok(FetchRowsResult {
+            columns,
+            rows: rows_to_data(&rows),
+            total_count: total_count as u64,
+        })
+    }
 }
 
 impl Database for PostgresRepo {
@@ -99,12 +156,12 @@ impl Database for PostgresRepo {
         Ok(tables)
     }
 
-    async fn get_schemas(&self) -> Result<Vec<Schema>, DbError> {
+    async fn get_schemas(&self) -> Result<Vec<TableRef>, DbError> {
         let rows = self
             .client
             .query(
                 "
-            SELECT table_catalog, table_schema, table_name
+            SELECT table_schema, table_name
             FROM information_schema.tables
             WHERE table_type='BASE TABLE'
               AND table_schema NOT IN ('pg_catalog', 'information_schema');
@@ -115,32 +172,33 @@ impl Database for PostgresRepo {
             .map_err(DbError::Postgres)?;
         let schemas = rows
             .into_iter()
-            .map(|x| Schema {
-                catalog: x.get(0),
-                schema: x.get(1),
-                name: x.get(2),
+            .map(|x| TableRef {
+                schema: x.get(0),
+                name: x.get(1),
             })
             .collect();
 
         Ok(schemas)
     }
 
-    async fn execute_sql(&self, sql: &str) -> Result<SqlExecuteResult, DbError> {
+    async fn execute_sql_with_options(
+        &self,
+        sql: &str,
+        options: Option<SqlExecuteOptions>,
+    ) -> Result<SqlExecuteResult, DbError> {
         if is_returning_query(sql) {
-            let rows = self
-                .client
-                .query(sql, &[])
-                .await
-                .map_err(DbError::Postgres)?;
-            Ok(SqlExecuteResult::RowsReturned(rows.len()))
-        } else {
-            let n = self
-                .client
-                .execute(sql, &[])
-                .await
-                .map_err(DbError::Postgres)?;
-            Ok(SqlExecuteResult::RowsAffected(n))
+            let result = self
+                .fetch_query_rows(sql, options.and_then(|opts| opts.page))
+                .await?;
+            return Ok(SqlExecuteResult::RowsReturned(result));
         }
+
+        let n = self
+            .client
+            .execute(sql, &[])
+            .await
+            .map_err(DbError::Postgres)?;
+        Ok(SqlExecuteResult::RowsAffected(n))
     }
 
     async fn fetch_rows(
@@ -170,18 +228,12 @@ impl Database for PostgresRepo {
             .await
             .map_err(DbError::Postgres)?;
         let has_id = probe.columns().iter().any(|c| c.name() == "id");
-        let columns: Vec<ColumnInfo> = probe
-            .columns()
-            .iter()
-            .map(|c| ColumnInfo {
-                name: c.name().to_string(),
-                data_type: c.type_().name().to_string(),
-            })
-            .collect();
+        let columns = columns_from_statement(&probe);
 
         let order = if has_id { " ORDER BY \"id\"" } else { "" };
-        let data_sql =
-            format!("SELECT * FROM \"{esc_schema}\".\"{esc_table}\"{order} LIMIT {limit} OFFSET {offset}");
+        let data_sql = format!(
+            "SELECT * FROM \"{esc_schema}\".\"{esc_table}\"{order} LIMIT {limit} OFFSET {offset}"
+        );
 
         let rows = self
             .client
@@ -189,14 +241,7 @@ impl Database for PostgresRepo {
             .await
             .map_err(DbError::Postgres)?;
 
-        let data: Vec<RowData> = rows
-            .iter()
-            .map(|row| {
-                (0..row.len())
-                    .map(|i| row_value_to_string(row, i))
-                    .collect()
-            })
-            .collect();
+        let data = rows_to_data(&rows);
 
         Ok(FetchRowsResult {
             columns,
@@ -204,65 +249,26 @@ impl Database for PostgresRepo {
             total_count: total_count as u64,
         })
     }
+}
 
-    async fn execute_sql_with_rows(
-        &self,
-        sql: &str,
-        limit: u16,
-        offset: u64,
-    ) -> Result<FetchRowsResult, DbError> {
-        // Get total count using subquery
-        let count_sql = format!("SELECT COUNT(*) FROM ({}) AS _subq", sql);
-        let count_row = self
-            .client
-            .query_one(&count_sql, &[])
-            .await
-            .map_err(DbError::Postgres)?;
-        let total_count: i64 = count_row.get(0);
-
-        // Fetch page using subquery
-        let data_sql = format!(
-            "SELECT * FROM ({}) AS _subq LIMIT {} OFFSET {}",
-            sql, limit, offset
-        );
-
-        // Use prepare to get column metadata even when no rows
-        let stmt = self
-            .client
-            .prepare(&data_sql)
-            .await
-            .map_err(DbError::Postgres)?;
-
-        let columns: Vec<ColumnInfo> = stmt
-            .columns()
-            .iter()
-            .map(|c| ColumnInfo {
-                name: c.name().to_string(),
-                data_type: c.type_().name().to_string(),
-            })
-            .collect();
-
-        let rows = self
-            .client
-            .query(&stmt, &[])
-            .await
-            .map_err(DbError::Postgres)?;
-
-        let data: Vec<RowData> = rows
-            .iter()
-            .map(|row| {
-                (0..row.len())
-                    .map(|i| row_value_to_string(row, i))
-                    .collect()
-            })
-            .collect();
-
-        Ok(FetchRowsResult {
-            columns,
-            rows: data,
-            total_count: total_count as u64,
+fn columns_from_statement(stmt: &tokio_postgres::Statement) -> Vec<ColumnInfo> {
+    stmt.columns()
+        .iter()
+        .map(|c| ColumnInfo {
+            name: c.name().to_string(),
+            data_type: c.type_().name().to_string(),
         })
-    }
+        .collect()
+}
+
+fn rows_to_data(rows: &[tokio_postgres::Row]) -> Vec<RowData> {
+    rows.iter()
+        .map(|row| {
+            (0..row.len())
+                .map(|i| row_value_to_string(row, i))
+                .collect()
+        })
+        .collect()
 }
 
 /// Converts a row value at index to Option<String>.
@@ -325,7 +331,7 @@ mod test {
     #[tokio::test]
     async fn get_schemas() {
         let client = PostgresRepo::new(test_config()).await.unwrap();
-        let users: Schema = client
+        let users: TableRef = client
             .get_schemas()
             .await
             .unwrap()
@@ -334,7 +340,6 @@ mod test {
             .unwrap();
         assert_eq!(users.name, "users");
         assert_eq!(users.schema, "public");
-        assert_eq!(users.catalog, "db_test");
     }
 
     #[tokio::test]
@@ -412,7 +417,7 @@ mod test {
         let client = PostgresRepo::new(test_config()).await.unwrap();
         let result = client.execute_sql("SELECT 1 AS num").await.unwrap();
         match result {
-            SqlExecuteResult::RowsReturned(n) => assert_eq!(n, 1),
+            SqlExecuteResult::RowsReturned(result) => assert_eq!(result.total_count, 1),
             _ => panic!("Expected RowsReturned"),
         }
     }
@@ -426,7 +431,7 @@ mod test {
             .await
             .unwrap();
         match result {
-            SqlExecuteResult::RowsReturned(n) => assert_eq!(n, 5),
+            SqlExecuteResult::RowsReturned(result) => assert_eq!(result.total_count, 5),
             _ => panic!("Expected RowsReturned"),
         }
     }
@@ -535,12 +540,23 @@ mod test {
     }
 
     #[tokio::test]
-    async fn execute_sql_with_rows_returns_select_results() {
+    async fn execute_sql_with_page_returns_select_results() {
         let client = PostgresRepo::new(test_config()).await.unwrap();
         let result = client
-            .execute_sql_with_rows("SELECT 1 AS num, 'test' AS str", 10, 0)
+            .execute_sql_with_options(
+                "SELECT 1 AS num, 'test' AS str",
+                Some(SqlExecuteOptions {
+                    page: Some(SqlPage {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                }),
+            )
             .await
             .unwrap();
+        let SqlExecuteResult::RowsReturned(result) = result else {
+            panic!("Expected RowsReturned");
+        };
         assert_eq!(result.columns.len(), 2);
         assert_eq!(result.rows.len(), 1);
         assert_eq!(result.rows[0][0], Some("1".into()));
@@ -548,12 +564,23 @@ mod test {
     }
 
     #[tokio::test]
-    async fn execute_sql_with_rows_handles_pagination() {
+    async fn execute_sql_with_page_handles_pagination() {
         let client = PostgresRepo::new(test_config()).await.unwrap();
         let result = client
-            .execute_sql_with_rows("SELECT generate_series(1, 10) AS n", 3, 0)
+            .execute_sql_with_options(
+                "SELECT generate_series(1, 10) AS n",
+                Some(SqlExecuteOptions {
+                    page: Some(SqlPage {
+                        limit: 3,
+                        offset: 0,
+                    }),
+                }),
+            )
             .await
             .unwrap();
+        let SqlExecuteResult::RowsReturned(result) = result else {
+            panic!("Expected RowsReturned");
+        };
         assert_eq!(result.total_count, 10);
         assert_eq!(result.rows.len(), 3);
     }

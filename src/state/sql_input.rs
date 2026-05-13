@@ -1,9 +1,13 @@
 /// Result of SQL execution displayed in a popup.
 #[derive(Debug, Clone)]
 pub enum SqlResult {
-    Success { rows_affected: u64 },
+    Success {
+        rows_affected: u64,
+    },
     /// Fallback: sqlparser missed a returning query; rows were returned but not displayed.
-    Rows { count: usize },
+    Rows {
+        count: usize,
+    },
     Error(String),
 }
 

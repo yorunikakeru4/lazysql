@@ -13,13 +13,13 @@ Allows connecting to a configured database, browsing schemas, tables, and field 
 
 ## Stack
 
-| Crate | Purpose |
-|---|---|
-| `tokio` | async runtime (`features = ["full"]`) |
-| `tokio-postgres` | PostgreSQL driver |
-| `ratatui` | TUI rendering |
-| `crossterm` | terminal backend for ratatui |
-| `async-trait` | async methods in traits |
+| Crate            | Purpose                               |
+| ---------------- | ------------------------------------- |
+| `tokio`          | async runtime (`features = ["full"]`) |
+| `tokio-postgres` | PostgreSQL driver                     |
+| `ratatui`        | TUI rendering                         |
+| `crossterm`      | terminal backend for ratatui          |
+| `async-trait`    | async methods in traits               |
 
 ## Architecture
 
@@ -38,12 +38,18 @@ src/
 │   ├── repo.rs           # re-exports
 │   └── repo/
 │       ├── db_repo.rs    # DbClient enum, DbError
-│       └── tables_repo.rs # Database trait, Table/Schema/TableField/ConstraintType
+│       └── tables_repo.rs # Database trait, TableRef/Table/TableField/ConstraintType
 ├── state.rs
 └── state/
-    ├── app_state.rs      # AppState — connection list, current DbClient
-    ├── router.rs         # Router + Screen enum (TUI navigation stack)
-    └── connect.rs        # (planned) connection screen logic
+    ├── app.rs            # AppState — connection list, current DbClient
+    ├── navigation.rs     # Router + Screen enum (TUI navigation stack)
+    ├── records/
+    │   └── mod.rs        # RecordsState, RecordsSource, pagination helpers
+    ├── connection/
+    │   ├── mod.rs        # ConnectState
+    │   └── form.rs       # FormState and connection form validation
+    ├── search.rs         # SearchState
+    └── sql_input.rs      # SqlInputState, SqlResult
 ```
 
 ### Key types
@@ -54,35 +60,39 @@ src/
 - `Database` trait — async interface; implement per DB backend.
 - `AppState` — holds the list of `Connect` configs and the optional active `DbClient`.
 - `Router` — stack-based screen navigator. `push`/`pop`/`current`.
+- `TableRef` — schema-qualified table reference returned by schema discovery.
 
 ## Development Setup
 
 Test database runs via Podman Compose. Credentials are in `docker-compose.yml`.
 
 ```bash
-# Spin up test DB, run all tests, tear down
+# Spin up test DB, run all integration tests, tear down
 just test
 
 # Keep DB running for manual inspection
-just run_postgres
+just up
 
 # Release build
 just build
 ```
 
-`just test` uses `podman-compose` — requires Podman installed.
+`just test` is the only supported way to run integration tests. It uses
+`podman-compose`, exports the test database password, runs `cargo test`, and
+tears the database down.
 
 ## Building & Testing
 
 ```bash
 cargo build
-cargo test
+just test
 cargo fmt
 cargo clippy -- -D warnings
 ```
 
 Integration tests in `db/postgres/tables.rs` and `db/postgres/init.rs` require the
-test database to be running. Run `just test` or `just run_postgres` first.
+test database environment prepared by `just test`. Do not run DB integration tests
+with plain `cargo test`; it will miss the test database setup and credentials.
 
 Always run `cargo fmt` and `cargo clippy` after any `.rs` change. Fix all warnings before committing.
 
@@ -133,8 +143,8 @@ Every public function, struct, enum, and trait gets a `///` doc comment.
 One concise sentence is enough. Add a second sentence only if the behaviour is non-obvious.
 
 ```rust
-/// Returns all schemas visible to the current connection, excluding system catalogs.
-pub async fn get_schemas(&self) -> Result<Vec<Schema>, DbError> { ... }
+/// Returns all user-visible table references for the current connection.
+pub async fn get_schemas(&self) -> Result<Vec<TableRef>, DbError> { ... }
 ```
 
 Private helpers don't need doc comments unless the logic is tricky.
@@ -169,13 +179,14 @@ Use `u16` for port numbers (`PostgresConfig::port`), not `u32`.
 ### TDD (Test-Driven Development)
 
 Write tests BEFORE implementation:
+
 1. Write failing test defining expected behavior
 2. Implement minimal code to pass
 3. Refactor if needed
 4. Repeat
 
 Test location: `#[cfg(test)] mod test` at bottom of each file.
-Integration tests requiring DB: run via `just test`.
+Integration tests requiring DB: run exclusively via `just test`.
 
 ## Adding a New DB Backend
 
@@ -189,7 +200,7 @@ Integration tests requiring DB: run via `just test`.
 Agents can:
 
 - Implement and extend `Database` trait for new backends
-- Add new `Screen` variants and navigation logic in `router.rs`
+- Add new `Screen` variants and navigation logic in `navigation.rs`
 - Implement `config/storage.rs` (TOML-based config persistence)
 - Write tests inside `#[cfg(test)] mod test` at the bottom of each file
 - Run `cargo fmt`, `cargo clippy`, `just test`
@@ -199,7 +210,7 @@ Agents can:
 - **No hardcoded secrets** — credentials belong in `docker-compose.yml` (dev) or env vars (prod). Never in `.rs` source files outside of test fixtures that are explicitly local-only.
 - **No `unwrap()` in non-test code** — propagate errors with `?` or return `DbError`.
 - **No `unsafe`** — not needed anywhere in this codebase.
-- **Don't skip CI checks** — all code must pass `cargo build`, `cargo test`, `cargo clippy`.
+- **Don't skip CI checks** — all code must pass `cargo build`, `just test`, `cargo clippy`.
 
 ## Security Notes
 

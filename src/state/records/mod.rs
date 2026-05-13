@@ -3,25 +3,11 @@ use crate::db::repo::tables_repo::{ColumnInfo, FetchRowsResult, RowData};
 /// Maximum number of characters displayed per cell before truncation.
 pub const MAX_CELL_LEN: usize = 50;
 
-/// Display mode for records viewer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DisplayMode {
-    #[default]
-    Table,
-    Expanded,
-}
-
 /// Source of records being viewed.
 #[derive(Debug, Clone)]
 pub enum RecordsSource {
-    Table {
-        schema: String,
-        table: String,
-    },
-    #[allow(dead_code)]
-    Query {
-        sql: String,
-    },
+    Table { schema: String, table: String },
+    Query { sql: String },
 }
 
 /// State for the paginated records viewer.
@@ -33,7 +19,6 @@ pub struct RecordsState {
     pub total_count: u64,
     pub offset: u64,
     pub rows_per_page: u16,
-    pub display_mode: DisplayMode,
     pub error: Option<String>,
     pub min_table_width: u16,
 }
@@ -48,7 +33,6 @@ impl RecordsState {
     }
 
     /// Creates state for viewing a query's results.
-    #[allow(dead_code)]
     pub fn for_query(sql: String) -> Self {
         Self {
             source: Some(RecordsSource::Query { sql }),
@@ -138,7 +122,6 @@ impl RecordsState {
         // Add borders (2) + some padding
         self.min_table_width = width.saturating_add(4);
     }
-
 }
 
 #[cfg(test)]

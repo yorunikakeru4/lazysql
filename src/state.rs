@@ -1,7 +1,6 @@
-pub mod app_state;
-pub mod connect;
-pub mod form;
+pub mod app;
+pub mod connection;
+pub mod navigation;
 pub mod records;
-pub mod router;
 pub mod search;
 pub mod sql_input;

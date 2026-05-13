@@ -1,9 +1,9 @@
 use crate::config::Connect;
 use crate::db::repo::tables_repo::TableField;
-use crate::state::app_state::AppState;
-use crate::state::form::FIELD_LABELS;
-use crate::state::records::{DisplayMode, MAX_CELL_LEN, RecordsState};
-use crate::state::router::{Router, Screen};
+use crate::state::app::AppState;
+use crate::state::connection::FIELD_LABELS;
+use crate::state::navigation::{Router, Screen};
+use crate::state::records::{MAX_CELL_LEN, RecordsState};
 use crate::state::sql_input::SqlResult;
 use ratatui::{
     Frame,
@@ -324,45 +324,24 @@ fn render_records(frame: &mut Frame, state: &AppState) {
         None => " Records ".to_string(),
     };
 
-    // Auto-expand when table is wider than available content area.
-    let available_width = chunks[0].width.saturating_sub(2);
-    let effective_mode = if records.display_mode == DisplayMode::Table
-        && records.min_table_width > available_width
-    {
-        DisplayMode::Expanded
-    } else {
-        records.display_mode
-    };
-
-    let content = match effective_mode {
-        DisplayMode::Table => format_records_table(records),
-        DisplayMode::Expanded => format_records_expanded(records),
-    };
+    let content = format_records_table(records);
 
     frame.render_widget(
-        Paragraph::new(content).block(Block::bordered().title(format!(
-            "{} (h/← prev, l/→ next, e/t toggle, Esc back)",
-            title
-        ))),
+        Paragraph::new(content)
+            .block(Block::bordered().title(format!("{} (h/← prev, l/→ next, Esc back)", title))),
         chunks[0],
     );
 
     // Status bar: pagination info
     let start_row = records.offset + 1;
     let end_row = (records.offset + records.rows.len() as u64).min(records.total_count);
-    let mode_indicator = match (records.display_mode, effective_mode) {
-        (DisplayMode::Table, DisplayMode::Expanded) => "Expanded (auto)",
-        (_, DisplayMode::Expanded) => "Expanded",
-        (_, DisplayMode::Table) => "Table",
-    };
     let status = format!(
-        "Page {}/{} | Rows {}-{} of {} | {}",
+        "Page {}/{} | Rows {}-{} of {}",
         records.current_page(),
         records.total_pages(),
         start_row,
         end_row,
-        records.total_count,
-        mode_indicator
+        records.total_count
     );
     frame.render_widget(
         Paragraph::new(status).block(Block::bordered().title(" Status ")),
@@ -437,45 +416,6 @@ fn format_records_table(records: &RecordsState) -> String {
         .join("\n");
 
     format!("{}\n{}\n{}", header, separator, rows)
-}
-
-/// Formats records in expanded vertical format (pgcli-style).
-fn format_records_expanded(records: &RecordsState) -> String {
-    if records.columns.is_empty() || records.rows.is_empty() {
-        return "No data".to_string();
-    }
-
-    let max_col_name = records
-        .columns
-        .iter()
-        .map(|c| c.name.len())
-        .max()
-        .unwrap_or(0);
-
-    let mut output = String::new();
-    for (row_idx, row) in records.rows.iter().enumerate() {
-        let record_num = records.offset + row_idx as u64 + 1;
-        let header = format!("-[ RECORD {} ]", record_num);
-        let dashes = "-".repeat(40usize.saturating_sub(header.len()));
-        output.push_str(&format!("{}{}\n", header, dashes));
-
-        for (col_idx, col) in records.columns.iter().enumerate() {
-            let raw = row
-                .get(col_idx)
-                .and_then(|v| v.as_ref())
-                .map(|s| s.as_str())
-                .unwrap_or("NULL");
-            let val = truncate_cell(raw);
-            output.push_str(&format!(
-                "{:<width$} | {}\n",
-                col.name,
-                val,
-                width = max_col_name
-            ));
-        }
-    }
-
-    output
 }
 
 fn format_fields(fields: &[&TableField]) -> String {
@@ -621,23 +561,6 @@ mod test {
     }
 
     #[test]
-    fn format_records_expanded_shows_record_headers() {
-        let records = RecordsState {
-            columns: vec![ColumnInfo {
-                name: "id".into(),
-                data_type: "int4".into(),
-            }],
-            rows: vec![vec![Some("1".into())]],
-            offset: 0,
-            ..Default::default()
-        };
-        let output = format_records_expanded(&records);
-        assert!(output.contains("-[ RECORD 1 ]"));
-        assert!(output.contains("id"));
-        assert!(output.contains("| 1"));
-    }
-
-    #[test]
     fn format_records_table_handles_null() {
         let records = RecordsState {
             columns: vec![ColumnInfo {
@@ -648,21 +571,6 @@ mod test {
             ..Default::default()
         };
         let output = format_records_table(&records);
-        assert!(output.contains("NULL"));
-    }
-
-    #[test]
-    fn format_records_expanded_handles_null() {
-        let records = RecordsState {
-            columns: vec![ColumnInfo {
-                name: "val".into(),
-                data_type: "text".into(),
-            }],
-            rows: vec![vec![None]],
-            offset: 0,
-            ..Default::default()
-        };
-        let output = format_records_expanded(&records);
         assert!(output.contains("NULL"));
     }
 

@@ -13,8 +13,8 @@ use futures::StreamExt;
 use ratatui::{Terminal, prelude::CrosstermBackend};
 
 use state::{
-    app_state::AppState,
-    router::{Router, Screen},
+    app::AppState,
+    navigation::{Router, Screen},
 };
 
 #[tokio::main]
@@ -98,7 +98,7 @@ async fn run(
                     let query = state.sql_input.query.trim().to_string();
                     if crate::db::postgres::tables::is_returning_query(&query) {
                         let size = terminal.size()?;
-                        match state.execute_sql_for_records(size.height, size.width).await {
+                        match state.execute_sql_for_records(size.height).await {
                             Ok(_) => {
                                 state.sql_input.reset();
                                 router.push(Screen::Records);
@@ -333,11 +333,7 @@ async fn run(
                 }
                 KeyCode::Char('s') => {
                     let size = terminal.size()?;
-                    if state
-                        .load_table_records(size.height, size.width)
-                        .await
-                        .is_ok()
-                    {
+                    if state.load_table_records(size.height).await.is_ok() {
                         router.push(Screen::Records);
                     }
                 }

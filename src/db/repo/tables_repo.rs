@@ -4,7 +4,20 @@ use crate::db::repo::db_repo::DbError;
 #[derive(Debug)]
 pub enum SqlExecuteResult {
     RowsAffected(u64),
-    RowsReturned(usize),
+    RowsReturned(FetchRowsResult),
+}
+
+/// Options controlling arbitrary SQL execution.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SqlExecuteOptions {
+    pub page: Option<SqlPage>,
+}
+
+/// Pagination options for SQL queries that return rows.
+#[derive(Debug, Clone, Copy)]
+pub struct SqlPage {
+    pub limit: u16,
+    pub offset: u64,
 }
 
 #[derive(Debug, PartialEq)]
@@ -22,9 +35,7 @@ pub fn parse_constraint(s: Option<&str>, referenced: Option<&str>) -> Option<Con
     }
 }
 #[derive(Debug)]
-#[allow(dead_code)]
-pub struct Schema {
-    pub catalog: String,
+pub struct TableRef {
     pub schema: String,
     pub name: String,
 }
@@ -64,18 +75,19 @@ pub struct FetchRowsResult {
 
 pub trait Database {
     async fn get_tables(&self, tables_names: Vec<String>) -> Result<Vec<Table>, DbError>;
-    async fn get_schemas(&self) -> Result<Vec<Schema>, DbError>;
-    async fn execute_sql(&self, sql: &str) -> Result<SqlExecuteResult, DbError>;
+    async fn get_schemas(&self) -> Result<Vec<TableRef>, DbError>;
+    async fn execute_sql(&self, sql: &str) -> Result<SqlExecuteResult, DbError> {
+        self.execute_sql_with_options(sql, None).await
+    }
+    async fn execute_sql_with_options(
+        &self,
+        sql: &str,
+        options: Option<SqlExecuteOptions>,
+    ) -> Result<SqlExecuteResult, DbError>;
     async fn fetch_rows(
         &self,
         schema: &str,
         table: &str,
-        limit: u16,
-        offset: u64,
-    ) -> Result<FetchRowsResult, DbError>;
-    async fn execute_sql_with_rows(
-        &self,
-        sql: &str,
         limit: u16,
         offset: u64,
     ) -> Result<FetchRowsResult, DbError>;

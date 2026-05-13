@@ -1,3 +1,7 @@
+pub mod form;
+
+pub use form::{FIELD_LABELS, FormState};
+
 #[derive(Debug, Default)]
 pub struct ConnectState {
     pub selected: usize,
