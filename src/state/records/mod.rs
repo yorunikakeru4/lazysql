@@ -229,10 +229,7 @@ mod test {
     fn update_from_result_populates_state() {
         let mut state = RecordsState::default();
         let result = FetchRowsResult {
-            columns: vec![ColumnInfo {
-                name: "id".into(),
-                data_type: "int4".into(),
-            }],
+            columns: vec![ColumnInfo { name: "id".into() }],
             rows: vec![vec![Some("1".into())]],
             total_count: 1,
         };

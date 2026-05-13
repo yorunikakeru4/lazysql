@@ -56,10 +56,8 @@ pub struct TableField {
 
 /// Column metadata for a result set.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct ColumnInfo {
     pub name: String,
-    pub data_type: String,
 }
 
 /// Row data as Vec<Option<String>> — None = NULL.
@@ -100,10 +98,7 @@ mod test {
     #[test]
     fn fetch_rows_result_stores_columns_and_rows() {
         let result = FetchRowsResult {
-            columns: vec![ColumnInfo {
-                name: "id".into(),
-                data_type: "int4".into(),
-            }],
+            columns: vec![ColumnInfo { name: "id".into() }],
             rows: vec![vec![Some("1".into())]],
             total_count: 1,
         };
@@ -113,13 +108,11 @@ mod test {
     }
 
     #[test]
-    fn column_info_holds_name_and_type() {
+    fn column_info_holds_name() {
         let col = ColumnInfo {
             name: "email".into(),
-            data_type: "varchar".into(),
         };
         assert_eq!(col.name, "email");
-        assert_eq!(col.data_type, "varchar");
     }
 
     #[test]

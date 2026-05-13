@@ -538,13 +538,9 @@ mod test {
     fn format_records_table_aligns_columns() {
         let records = RecordsState {
             columns: vec![
-                ColumnInfo {
-                    name: "id".into(),
-                    data_type: "int4".into(),
-                },
+                ColumnInfo { name: "id".into() },
                 ColumnInfo {
                     name: "name".into(),
-                    data_type: "text".into(),
                 },
             ],
             rows: vec![
@@ -563,10 +559,7 @@ mod test {
     #[test]
     fn format_records_table_handles_null() {
         let records = RecordsState {
-            columns: vec![ColumnInfo {
-                name: "val".into(),
-                data_type: "text".into(),
-            }],
+            columns: vec![ColumnInfo { name: "val".into() }],
             rows: vec![vec![None]],
             ..Default::default()
         };

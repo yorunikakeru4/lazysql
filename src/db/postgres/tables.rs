@@ -256,7 +256,6 @@ fn columns_from_statement(stmt: &tokio_postgres::Statement) -> Vec<ColumnInfo> {
         .iter()
         .map(|c| ColumnInfo {
             name: c.name().to_string(),
-            data_type: c.type_().name().to_string(),
         })
         .collect()
 }
