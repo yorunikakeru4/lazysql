@@ -22,6 +22,7 @@ pub struct SqlInputState {
     pub history_idx: Option<usize>,
 }
 
+#[allow(dead_code)]
 impl SqlInputState {
     /// Activates the SQL input bar.
     pub fn open(&mut self) {
