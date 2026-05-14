@@ -2,6 +2,25 @@
 
 Ленивый TUI-клиент для работы с базами данных — вдохновлён lazygit.
 
+## Установка
+
+Либо через git репозиторий, либо через flake.nix, в планах добавить ещё для guix
+
+Добавляете в inputs
+
+```nix
+    inputs.lazysql.url = "git+https://codeberg.org/yorunikakeru/lazysql.git";
+```
+
+После через specialArgs добавляете в
+
+```nix
+ environment.systemPackages = [
+    inputs.awww.packages.${pkgs.stdenv.hostPlatform.system}.awww
+  ];
+
+```
+
 ## Что уже работает
 
 - Подключение к PostgreSQL с сохранением конфигов в `~/.config/lazysql/config.toml`
@@ -46,16 +65,19 @@ just build    # release-сборка
 ### Без `just`
 
 **Запуск:**
+
 ```bash
 cargo run --release
 ```
 
 **Unit-тесты** (без базы данных):
+
 ```bash
 cargo test
 ```
 
 **Интеграционные тесты** (требуют запущенного PostgreSQL):
+
 ```bash
 # 1. Поднять тестовую БД
 podman-compose up --build -d
