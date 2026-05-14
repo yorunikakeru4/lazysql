@@ -64,6 +64,7 @@ impl FormState {
         };
 
         Ok(PostgresConfig {
+            name: None,
             host,
             user,
             db_name,

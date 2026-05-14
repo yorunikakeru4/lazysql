@@ -28,6 +28,7 @@ mod test {
 
     fn test_config() -> crate::config::PostgresConfig {
         crate::config::PostgresConfig {
+            name: None,
             host: std::env::var("TEST_DB_HOST").unwrap_or_else(|_| "localhost".to_string()),
             user: std::env::var("TEST_DB_USER").unwrap_or_else(|_| "test_user".to_string()),
             db_name: std::env::var("TEST_DB_NAME").unwrap_or_else(|_| "db_test".to_string()),

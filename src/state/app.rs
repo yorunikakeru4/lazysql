@@ -319,6 +319,7 @@ mod test {
 
     fn pg_connect() -> Connect {
         Connect::Postgres(PostgresConfig {
+            name: None,
             host: "h".to_string(),
             user: "u".to_string(),
             db_name: "d".to_string(),

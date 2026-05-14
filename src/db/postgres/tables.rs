@@ -142,8 +142,8 @@ impl Database for PostgresRepo {
                 name: el.get(1),
                 data_type: el.get(2),
                 is_nullable: el.get(3),
-                constraint_type: parse_constraint(el.get(4), el.get(5)),
-                default: el.get(6),
+                constraint: parse_constraint(el.get(4), el.get(5)),
+                default_value: el.get(6),
             };
             tables_info.entry(table_name).or_default().push(field);
         }
@@ -316,6 +316,7 @@ mod test {
 
     fn test_config() -> crate::config::PostgresConfig {
         crate::config::PostgresConfig {
+            name: None,
             host: std::env::var("TEST_DB_HOST").unwrap_or_else(|_| "localhost".to_string()),
             user: std::env::var("TEST_DB_USER").unwrap_or_else(|_| "test_user".to_string()),
             db_name: std::env::var("TEST_DB_NAME").unwrap_or_else(|_| "db_test".to_string()),
@@ -355,7 +356,7 @@ mod test {
         assert_eq!(user_id.data_type, "integer");
         assert_eq!(user_id.is_nullable, "NO");
         assert_eq!(
-            user_id.constraint_type,
+            user_id.constraint,
             Some(crate::db::repo::tables_repo::ConstraintType::ForeignKey(
                 "users".to_string()
             ))
