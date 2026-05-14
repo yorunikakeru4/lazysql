@@ -1,4 +1,5 @@
 /// Vim-style modal state for the TUI.
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum AppMode {
     #[default]
