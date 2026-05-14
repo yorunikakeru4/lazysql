@@ -5,16 +5,20 @@ use crate::db::repo::tables_repo::{
     Database, FetchRowsResult, SqlExecuteOptions, SqlExecuteResult, SqlPage, Table, TableDetails,
     TableRef,
 };
-use crate::state::connection::{ActivePane, ConnectState, FormState};
+use crate::state::connection::{ActivePane, ConnectState, ConnectionStatus, FormState};
 use crate::state::mode::AppMode;
 use crate::state::records::{RecordsSource, RecordsState};
 use crate::state::search::SearchState;
 use crate::state::sql_input::{SqlInputState, SqlResult};
 use std::collections::BTreeSet;
+use std::time::Duration;
+
+const CONNECTION_STATUS_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
 pub struct AppState {
     pub connections: Vec<Connect>,
+    pub connection_statuses: Vec<ConnectionStatus>,
     pub current_db: Option<DbClient>,
     pub connect: ConnectState,
     pub form: FormState,
@@ -34,6 +38,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(connections: Vec<Connect>) -> Self {
         AppState {
+            connection_statuses: vec![ConnectionStatus::Unknown; connections.len()],
             connections,
             current_db: None,
             connect: ConnectState::default(),
@@ -69,6 +74,126 @@ impl AppState {
             .filter(|s| s.schema == schema)
             .map(|s| s.name.clone())
             .collect()
+    }
+
+    /// Keeps the status list aligned with the connection list.
+    pub fn sync_connection_statuses(&mut self) {
+        self.connection_statuses
+            .resize(self.connections.len(), ConnectionStatus::Unknown);
+    }
+
+    /// Removes one saved connection and its status entry by index.
+    pub fn remove_connection_at(&mut self, index: usize) {
+        if index >= self.connections.len() {
+            return;
+        }
+        self.connections.remove(index);
+        if index < self.connection_statuses.len() {
+            self.connection_statuses.remove(index);
+        }
+        self.sync_connection_statuses();
+    }
+
+    /// Updates the status for one connection index.
+    pub fn set_connection_status(&mut self, index: usize, status: ConnectionStatus) {
+        self.sync_connection_statuses();
+        let Some(slot) = self.connection_statuses.get_mut(index) else {
+            return;
+        };
+        *slot = status;
+    }
+
+    /// Returns the last known status for one connection index.
+    pub fn connection_status(&self, index: usize) -> ConnectionStatus {
+        self.connection_statuses
+            .get(index)
+            .copied()
+            .unwrap_or(ConnectionStatus::Unknown)
+    }
+
+    /// Refreshes the reachability status for all saved connections.
+    pub async fn refresh_connection_statuses(&mut self) {
+        for index in 0..self.connections.len() {
+            self.refresh_connection_status(index).await;
+        }
+    }
+    /// Refreshes the reachability status for one saved connection.
+    pub async fn refresh_connection_status(&mut self, index: usize) {
+        let Some(connect) = self.connections.get(index).cloned() else {
+            return;
+        };
+        let status =
+            match tokio::time::timeout(CONNECTION_STATUS_TIMEOUT, DbClient::new(connect)).await {
+                Ok(Ok(_)) => ConnectionStatus::Online,
+                Ok(Err(_)) | Err(_) => ConnectionStatus::Offline,
+            };
+        self.set_connection_status(index, status);
+    }
+
+    /// Connection indices filtered by display name.
+    pub fn filtered_connection_indices(&self) -> Vec<usize> {
+        self.connections
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| {
+                let meta = crate::state::connection::ConnectionMeta::from(c);
+                self.search.matches(&meta.name).then_some(i)
+            })
+            .collect()
+    }
+
+    /// Position of the selected connection inside the filtered connection list.
+    pub fn selected_filtered_connection_position(&self) -> Option<usize> {
+        self.filtered_connection_indices()
+            .iter()
+            .position(|i| *i == self.connect.selected)
+    }
+
+    /// Clamps `connect.selected` to a visible connection after search changes.
+    pub fn clamp_connection_selection(&mut self) {
+        let indices = self.filtered_connection_indices();
+        if indices.is_empty() {
+            self.connect.selected = 0;
+            return;
+        }
+        if indices.contains(&self.connect.selected) {
+            return;
+        }
+        self.connect.selected = indices[0];
+    }
+
+    /// Moves the connection selection down within the filtered connection list.
+    pub fn select_next_filtered_connection(&mut self) {
+        let indices = self.filtered_connection_indices();
+        if indices.is_empty() {
+            return;
+        }
+        let current = indices
+            .iter()
+            .position(|i| *i == self.connect.selected)
+            .unwrap_or(0);
+        self.connect.selected = indices[(current + 1) % indices.len()];
+    }
+
+    /// Moves the connection selection up within the filtered connection list.
+    pub fn select_prev_filtered_connection(&mut self) {
+        let indices = self.filtered_connection_indices();
+        if indices.is_empty() {
+            return;
+        }
+        let current = indices
+            .iter()
+            .position(|i| *i == self.connect.selected)
+            .unwrap_or(0);
+        self.connect.selected = indices[current.saturating_sub(1)];
+    }
+
+    /// Selects the first visible connection, if any.
+    pub fn select_first_filtered_connection(&mut self) {
+        let Some(first) = self.filtered_connection_indices().first().copied() else {
+            return;
+        };
+        self.connect.selected = first;
     }
 
     /// Schema names filtered by `search.query` (case-insensitive, empty query = all).
@@ -126,10 +251,12 @@ impl AppState {
             Postgres(_) => match DbClient::new(self.connections[idx].clone()).await {
                 Ok(client) => {
                     self.current_db = Some(client);
+                    self.set_connection_status(idx, ConnectionStatus::Online);
                     Ok(())
                 }
                 Err(e) => {
                     self.connect.error = Some(e.to_string());
+                    self.set_connection_status(idx, ConnectionStatus::Offline);
                     Err(e)
                 }
             },
@@ -347,6 +474,17 @@ mod test {
         })
     }
 
+    fn named_pg_connect(name: &str) -> Connect {
+        Connect::Postgres(PostgresConfig {
+            name: Some(name.to_string()),
+            host: "h".to_string(),
+            user: "u".to_string(),
+            db_name: "d".to_string(),
+            port: 5432,
+            password: None,
+        })
+    }
+
     #[test]
     fn schema_names_deduped_and_sorted() {
         let mut state = AppState::new(vec![pg_connect()]);
@@ -405,6 +543,23 @@ mod test {
         assert!(state.connect.error.is_some());
     }
 
+    #[tokio::test]
+    async fn connect_selected_sets_error_on_failure() {
+        let mut state = AppState::new(vec![Connect::Postgres(PostgresConfig {
+            name: Some("bad".to_string()),
+            host: "127.0.0.1".to_string(),
+            user: "postgres".to_string(),
+            db_name: "postgres".to_string(),
+            port: 1,
+            password: Some("wrong".to_string()),
+        })]);
+
+        let result = state.connect_selected().await;
+
+        assert!(result.is_err());
+        assert!(state.connect.error.is_some());
+    }
+
     #[test]
     fn filtered_schema_names_empty_query_returns_all() {
         let mut state = AppState::new(vec![pg_connect()]);
@@ -454,5 +609,100 @@ mod test {
         state.search.query = "user".to_string();
         let result = state.filtered_table_names("public");
         assert_eq!(result, vec!["users"]);
+    }
+
+    #[test]
+    fn filtered_connection_indices_filters_by_display_name() {
+        let mut state = AppState::new(vec![
+            named_pg_connect("Local Dev"),
+            named_pg_connect("Staging"),
+            named_pg_connect("Production"),
+        ]);
+        state.search.query = "dev".to_string();
+
+        assert_eq!(state.filtered_connection_indices(), vec![0]);
+    }
+
+    #[test]
+    fn filtered_connection_indices_matches_case_insensitive() {
+        let mut state = AppState::new(vec![named_pg_connect("Local Dev")]);
+        state.search.query = "LOCAL".to_string();
+
+        assert_eq!(state.filtered_connection_indices(), vec![0]);
+    }
+
+    #[test]
+    fn clamp_connection_selection_moves_to_first_visible_match() {
+        let mut state = AppState::new(vec![
+            named_pg_connect("Local Dev"),
+            named_pg_connect("Staging"),
+            named_pg_connect("Production"),
+        ]);
+        state.connect.selected = 0;
+        state.search.query = "prod".to_string();
+
+        state.clamp_connection_selection();
+
+        assert_eq!(state.connect.selected, 2);
+    }
+
+    #[test]
+    fn selected_filtered_connection_position_is_none_without_match() {
+        let mut state = AppState::new(vec![named_pg_connect("Local Dev")]);
+        state.search.query = "missing".to_string();
+
+        assert_eq!(state.selected_filtered_connection_position(), None);
+    }
+
+    #[test]
+    fn new_initializes_unknown_connection_statuses() {
+        let state = AppState::new(vec![
+            named_pg_connect("Local Dev"),
+            named_pg_connect("Prod"),
+        ]);
+
+        assert_eq!(
+            state.connection_statuses,
+            vec![ConnectionStatus::Unknown, ConnectionStatus::Unknown]
+        );
+    }
+
+    #[test]
+    fn sync_connection_statuses_tracks_connection_count() {
+        let mut state = AppState::new(vec![named_pg_connect("Local Dev")]);
+        state.set_connection_status(0, ConnectionStatus::Online);
+        state.connections.push(named_pg_connect("Prod"));
+
+        state.sync_connection_statuses();
+
+        assert_eq!(
+            state.connection_statuses,
+            vec![ConnectionStatus::Online, ConnectionStatus::Unknown]
+        );
+
+        state.connections.pop();
+        state.sync_connection_statuses();
+
+        assert_eq!(state.connection_statuses, vec![ConnectionStatus::Online]);
+    }
+
+    #[test]
+    fn remove_connection_at_keeps_statuses_aligned_for_middle_index() {
+        let mut state = AppState::new(vec![
+            named_pg_connect("Local Dev"),
+            named_pg_connect("Staging"),
+            named_pg_connect("Prod"),
+        ]);
+        state.set_connection_status(0, ConnectionStatus::Online);
+        state.set_connection_status(1, ConnectionStatus::Offline);
+        state.set_connection_status(2, ConnectionStatus::Unknown);
+
+        state.remove_connection_at(1);
+
+        assert_eq!(state.connections.len(), 2);
+        assert_eq!(
+            state.connection_statuses,
+            vec![ConnectionStatus::Online, ConnectionStatus::Unknown]
+        );
     }
 }

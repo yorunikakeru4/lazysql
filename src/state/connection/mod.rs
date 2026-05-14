@@ -14,6 +14,18 @@ pub struct ConnectionMeta {
     pub driver: String,
 }
 
+/// Reachability state for a saved connection.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionStatus {
+    /// Connection has not been checked yet.
+    #[default]
+    Unknown,
+    /// Last connection check succeeded.
+    Online,
+    /// Last connection check failed or timed out.
+    Offline,
+}
+
 impl From<&Connect> for ConnectionMeta {
     fn from(c: &Connect) -> Self {
         match c {

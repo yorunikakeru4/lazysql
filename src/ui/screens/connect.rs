@@ -1,9 +1,10 @@
 use crate::state::app::AppState;
-use crate::state::connection::ConnectionMeta;
+use crate::state::connection::{ConnectionMeta, ConnectionStatus};
 use crate::ui::{theme, widgets};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
+    style::Color,
     style::Style,
     text::{Line, Span},
     widgets::{Block, Cell, Paragraph, Row, Table, TableState},
@@ -11,9 +12,11 @@ use ratatui::{
 
 const HINTS: &[(&str, &str)] = &[
     ("a", "add"),
+    ("r", "refresh"),
     ("↵", "connect"),
     ("e", "edit"),
     ("d", "delete"),
+    ("/", "filter"),
     ("?", "help"),
     ("q", "quit"),
 ];
@@ -21,28 +24,49 @@ const HINTS: &[(&str, &str)] = &[
 /// Renders the connection list screen.
 pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     let area = frame.area();
-    let chunks = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Fill(1),
-        Constraint::Length(5),
-        Constraint::Length(1),
-    ])
+    let show_search = state.search.active || !state.search.query.is_empty();
+    let chunks = Layout::vertical(if show_search {
+        vec![
+            Constraint::Length(1),
+            Constraint::Fill(1),
+            Constraint::Length(3),
+            Constraint::Length(5),
+            Constraint::Length(1),
+        ]
+    } else {
+        vec![
+            Constraint::Length(1),
+            Constraint::Fill(1),
+            Constraint::Length(5),
+            Constraint::Length(1),
+        ]
+    })
     .split(area);
 
     widgets::hintbar::render(frame, chunks[0], HINTS);
     render_connection_list(frame, chunks[1], state);
-    render_details_panel(frame, chunks[2], state);
+    let details_idx = if show_search {
+        widgets::search::render_search_bar(frame, chunks[2], state);
+        3
+    } else {
+        2
+    };
+    render_details_panel(frame, chunks[details_idx], state);
     widgets::statusbar::render(
         frame,
-        chunks[3],
+        chunks[details_idx + 1],
         &state.mode,
         &format!("dbx — {} connections", state.connections.len()),
-        "j/k:move  a:add  ↵:connect",
+        "j/k:move  /:filter  a:add  ↵:connect",
     );
 }
 
 fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
-    let metas: Vec<ConnectionMeta> = state.connections.iter().map(ConnectionMeta::from).collect();
+    let filtered_indices = state.filtered_connection_indices();
+    let metas: Vec<(usize, ConnectionMeta)> = filtered_indices
+        .iter()
+        .map(|i| (*i, ConnectionMeta::from(&state.connections[*i])))
+        .collect();
 
     let header = Row::new(vec![
         Cell::from(" #").style(Style::new().fg(theme::FG4)),
@@ -55,13 +79,10 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
     let rows: Vec<Row> = metas
         .iter()
         .enumerate()
-        .map(|(i, m)| {
-            let status_cell = Cell::from(Line::from(vec![
-                Span::styled("·", Style::new().fg(theme::FG4)),
-                Span::styled(" —", Style::new().fg(theme::FG4)),
-            ]));
+        .map(|(visible_i, (index, m))| {
+            let status_cell = render_status_cell(state.connection_status(*index));
             Row::new(vec![
-                Cell::from(format!(" {}", i + 1)).style(Style::new().fg(theme::FG4)),
+                Cell::from(format!(" {}", visible_i + 1)).style(Style::new().fg(theme::FG4)),
                 Cell::from(m.name.clone()).style(Style::new().fg(theme::FG0)),
                 Cell::from(format!("{}:{}", m.host, m.port)).style(Style::new().fg(theme::FG3)),
                 Cell::from(m.db_name.clone()).style(Style::new().fg(theme::FG3)),
@@ -80,27 +101,61 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let count_str = if state.connections.is_empty() {
         "0/0".to_string()
+    } else if metas.is_empty() {
+        format!("0/{}", state.connections.len())
     } else {
-        format!("{}/{}", state.connect.selected + 1, state.connections.len())
+        let selected = state
+            .selected_filtered_connection_position()
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        format!("{}/{}", selected, metas.len())
     };
 
-    let mut table_state = TableState::default().with_selected(Some(state.connect.selected));
+    let mut table_state =
+        TableState::default().with_selected(state.selected_filtered_connection_position());
     let table = Table::new(rows, widths)
         .header(header)
         .block(
             Block::bordered()
                 .title(format!(" Saved Connections ─── {} ", count_str))
-                .border_style(Style::new().fg(theme::BG3)),
+                .title_style(Style::new().fg(theme::BLUE).bold())
+                .border_style(Style::new().fg(theme::BLUE)),
         )
-        .row_highlight_style(Style::new().bg(theme::BG_SEL).fg(theme::FG0))
+        .row_highlight_style(selected_row_highlight_style())
         .highlight_symbol("▶ ");
 
     frame.render_stateful_widget(table, area, &mut table_state);
 }
 
+fn render_status_cell(status: ConnectionStatus) -> Cell<'static> {
+    let (color, label) = status_indicator(status);
+    Cell::from(Line::from(vec![
+        Span::styled(status_dot_symbol(), Style::new().fg(color)),
+        Span::styled(label, Style::new().fg(color)),
+    ]))
+}
+
+fn status_indicator(status: ConnectionStatus) -> (Color, &'static str) {
+    match status {
+        ConnectionStatus::Unknown => (theme::FG4, " unknown"),
+        ConnectionStatus::Online => (theme::GREEN, " online"),
+        ConnectionStatus::Offline => (theme::RED, " offline"),
+    }
+}
+
+fn status_dot_symbol() -> &'static str {
+    "●"
+}
+
+fn selected_row_highlight_style() -> Style {
+    Style::new().bg(theme::BG_SEL)
+}
+
 fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
     let metas: Vec<ConnectionMeta> = state.connections.iter().map(ConnectionMeta::from).collect();
-    let selected = metas.get(state.connect.selected);
+    let selected = state
+        .selected_filtered_connection_position()
+        .and_then(|_| metas.get(state.connect.selected));
 
     let content: Vec<Line> = if let Some(m) = selected {
         vec![
@@ -139,8 +194,42 @@ fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
         Paragraph::new(content).block(
             Block::bordered()
                 .title(title)
-                .border_style(Style::new().fg(theme::BG3)),
+                .title_style(Style::new().fg(theme::BLUE).bold())
+                .border_style(Style::new().fg(theme::BLUE)),
         ),
         area,
     );
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn status_indicator_uses_expected_labels_and_colors() {
+        assert_eq!(
+            status_indicator(ConnectionStatus::Unknown),
+            (theme::FG4, " unknown")
+        );
+        assert_eq!(
+            status_indicator(ConnectionStatus::Online),
+            (theme::GREEN, " online")
+        );
+        assert_eq!(
+            status_indicator(ConnectionStatus::Offline),
+            (theme::RED, " offline")
+        );
+    }
+
+    #[test]
+    fn status_dot_uses_filled_circle_symbol() {
+        assert_eq!(status_dot_symbol(), "●");
+    }
+
+    #[test]
+    fn selected_row_highlight_does_not_override_foreground_color() {
+        let style = selected_row_highlight_style();
+        assert_eq!(style.bg, Some(theme::BG_SEL));
+        assert_eq!(style.fg, None);
+    }
 }

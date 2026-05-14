@@ -21,7 +21,9 @@ use state::{
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let connections = ConfigStorage::load();
-    let mut state = AppState::new(connections);
+    let mut state = initialize_state(connections);
+    state.refresh_connection_statuses().await;
+
     let mut router = Router::new();
 
     enable_raw_mode()?;
@@ -35,6 +37,11 @@ async fn main() -> std::io::Result<()> {
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     result
+}
+
+/// Builds startup state without blocking on connection reachability probes.
+fn initialize_state(connections: Vec<config::Connect>) -> AppState {
+    AppState::new(connections)
 }
 
 async fn run(
@@ -77,6 +84,10 @@ async fn run(
             continue;
         }
 
+        if handle_connect_error_popup_key(key, state, router) {
+            continue;
+        }
+
         // SQL editor (active)
         if state.sql_input.active {
             handle_sql_editor(key, state, terminal, router).await?;
@@ -87,26 +98,6 @@ async fn run(
         if state.search.active {
             handle_search(key, state, router);
             continue;
-        }
-
-        // gg motion
-        if pending_g {
-            pending_g = false;
-            if key.code == KeyCode::Char('g') {
-                match router.current() {
-                    Some(Screen::Connect) => state.connect.selected = 0,
-                    Some(Screen::Database) => {
-                        if state.active_pane == ActivePane::Schemas {
-                            state.schema_selected = 0;
-                        } else {
-                            state.table_selected = 0;
-                        }
-                    }
-                    Some(Screen::Records) => state.records.selected_row = 0,
-                    _ => {}
-                }
-                continue;
-            }
         }
 
         // Global ? opens help
@@ -122,7 +113,7 @@ async fn run(
                 }
                 handle_connect(key, state, router, &mut pending_g).await;
             }
-            Some(Screen::AddConnection) => handle_add_connection(key, state, router),
+            Some(Screen::AddConnection) => handle_add_connection(key, state, router).await,
             Some(Screen::Database) => {
                 handle_database(key, state, router, terminal, &mut pending_g).await?;
             }
@@ -132,6 +123,23 @@ async fn run(
         }
     }
     Ok(())
+}
+
+/// Handles key input while the connect error popup is visible.
+fn handle_connect_error_popup_key(
+    key: crossterm::event::KeyEvent,
+    state: &mut AppState,
+    router: &Router,
+) -> bool {
+    if !matches!(router.current(), Some(Screen::Connect)) || state.connect.error.is_none() {
+        return false;
+    }
+
+    if matches!(key.code, KeyCode::Enter | KeyCode::Esc) {
+        state.connect.error = None;
+    }
+
+    true
 }
 
 // ─── SQL Editor ──────────────────────────────────────────────────────────────
@@ -225,8 +233,13 @@ fn handle_search(key: crossterm::event::KeyEvent, state: &mut AppState, router: 
     match key.code {
         KeyCode::Esc => {
             state.search.reset();
-            state.schema_selected = 0;
-            state.table_selected = 0;
+            match router.current() {
+                Some(Screen::Connect) => state.select_first_filtered_connection(),
+                _ => {
+                    state.schema_selected = 0;
+                    state.table_selected = 0;
+                }
+            }
             state.mode = AppMode::Normal;
         }
         KeyCode::Enter => {
@@ -235,10 +248,14 @@ fn handle_search(key: crossterm::event::KeyEvent, state: &mut AppState, router: 
         }
         KeyCode::Backspace => {
             state.search.query.pop();
-            state.clamp_search_selections();
+            match router.current() {
+                Some(Screen::Connect) => state.clamp_connection_selection(),
+                _ => state.clamp_search_selections(),
+            }
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if let Some(Screen::Database) = router.current() {
+        KeyCode::Down | KeyCode::Char('j') => match router.current() {
+            Some(Screen::Connect) => state.select_next_filtered_connection(),
+            Some(Screen::Database) => {
                 if state.active_pane == ActivePane::Schemas {
                     let len = state.filtered_schema_names().len();
                     if len > 0 {
@@ -252,19 +269,25 @@ fn handle_search(key: crossterm::event::KeyEvent, state: &mut AppState, router: 
                     }
                 }
             }
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            if let Some(Screen::Database) = router.current() {
+            _ => {}
+        },
+        KeyCode::Up | KeyCode::Char('k') => match router.current() {
+            Some(Screen::Connect) => state.select_prev_filtered_connection(),
+            Some(Screen::Database) => {
                 if state.active_pane == ActivePane::Schemas {
                     state.schema_selected = state.schema_selected.saturating_sub(1);
                 } else {
                     state.table_selected = state.table_selected.saturating_sub(1);
                 }
             }
-        }
+            _ => {}
+        },
         KeyCode::Char(c) => {
             state.search.query.push(c);
-            state.clamp_search_selections();
+            match router.current() {
+                Some(Screen::Connect) => state.clamp_connection_selection(),
+                _ => state.clamp_search_selections(),
+            }
         }
         _ => {}
     }
@@ -280,24 +303,35 @@ async fn handle_connect(
 ) {
     match key.code {
         KeyCode::Down | KeyCode::Char('j') => {
-            state.connect.select_next(state.connections.len());
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            state.connect.select_prev(state.connections.len());
-        }
-        KeyCode::Char('G') => {
-            let len = state.connections.len();
-            if len > 0 {
-                state.connect.selected = len - 1;
+            if !state.search.query.is_empty() {
+                state.select_next_filtered_connection();
+            } else {
+                state.connect.select_next(state.connections.len());
             }
         }
-        KeyCode::Char('g') => *pending_g = true,
+        KeyCode::Up | KeyCode::Char('k') => {
+            if !state.search.query.is_empty() {
+                state.select_prev_filtered_connection();
+            } else {
+                state.connect.select_prev(state.connections.len());
+            }
+        }
+        KeyCode::Char('/') => {
+            state.search.open();
+            state.mode = AppMode::Search;
+        }
         KeyCode::Char('a') => {
             *pending_g = false;
             state.form.reset();
             state.mode = AppMode::Insert;
             router.push(Screen::AddConnection);
         }
+
+        KeyCode::Char('r') => {
+            *pending_g = false;
+            state.refresh_connection_statuses().await;
+        }
+
         KeyCode::Char('e') => {
             *pending_g = false;
             if let Some(config::Connect::Postgres(cfg)) =
@@ -314,14 +348,18 @@ async fn handle_connect(
         KeyCode::Char('d') => {
             *pending_g = false;
             if !state.connections.is_empty() {
-                state.connections.remove(state.connect.selected);
+                state.remove_connection_at(state.connect.selected);
                 if state.connect.selected >= state.connections.len() {
                     state.connect.selected = state.connections.len().saturating_sub(1);
                 }
+                state.clamp_connection_selection();
                 let _ = ConfigStorage::save(&state.connections);
             }
         }
         KeyCode::Char('l') | KeyCode::Enter => {
+            if state.selected_filtered_connection_position().is_none() {
+                return;
+            }
             if !state.connections.is_empty()
                 && state.connect_selected().await.is_ok()
                 && state.load_schemas().await.is_ok()
@@ -337,7 +375,7 @@ async fn handle_connect(
 
 // ─── Add Connection ───────────────────────────────────────────────────────────
 
-fn handle_add_connection(
+async fn handle_add_connection(
     key: crossterm::event::KeyEvent,
     state: &mut AppState,
     router: &mut Router,
@@ -353,9 +391,9 @@ fn handle_add_connection(
         KeyCode::Backspace => {
             state.form.current_value_mut().pop();
         }
-        KeyCode::Enter => save_connection_form(state, router),
+        KeyCode::Enter => save_connection_form(state, router).await,
         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            save_connection_form(state, router);
+            save_connection_form(state, router).await;
         }
         KeyCode::Char(c) => {
             state.form.current_value_mut().push(c);
@@ -364,7 +402,7 @@ fn handle_add_connection(
     }
 }
 
-fn save_connection_form(state: &mut AppState, router: &mut Router) {
+async fn save_connection_form(state: &mut AppState, router: &mut Router) {
     match state.form.to_postgres_config() {
         Ok(cfg) => {
             state.form.error = None;
@@ -377,7 +415,11 @@ fn save_connection_form(state: &mut AppState, router: &mut Router) {
                 state.connections.push(config::Connect::Postgres(cfg));
                 state.connect.selected = state.connections.len().saturating_sub(1);
             }
+            state.sync_connection_statuses();
             let _ = ConfigStorage::save(&state.connections);
+            state
+                .refresh_connection_status(state.connect.selected)
+                .await;
             state.form.reset();
             state.mode = AppMode::Normal;
             router.pop();
@@ -611,5 +653,76 @@ async fn handle_records(
         }
         KeyCode::Char('g') => *pending_g = true,
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crossterm::event::KeyEvent;
+
+    #[test]
+    fn connect_error_popup_enter_dismisses_and_consumes_input() {
+        let mut state = AppState::new(vec![]);
+        state.connect.error = Some("failed".to_string());
+        let router = Router::new();
+
+        let consumed = handle_connect_error_popup_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut state,
+            &router,
+        );
+
+        assert!(consumed);
+        assert!(state.connect.error.is_none());
+    }
+
+    #[test]
+    fn connect_error_popup_esc_dismisses_and_consumes_input() {
+        let mut state = AppState::new(vec![]);
+        state.connect.error = Some("failed".to_string());
+        let router = Router::new();
+
+        let consumed = handle_connect_error_popup_key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &mut state,
+            &router,
+        );
+
+        assert!(consumed);
+        assert!(state.connect.error.is_none());
+    }
+
+    #[test]
+    fn connect_error_popup_consumes_other_keys_without_dismissing() {
+        let mut state = AppState::new(vec![]);
+        state.connect.error = Some("failed".to_string());
+        let router = Router::new();
+
+        let consumed = handle_connect_error_popup_key(
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
+            &mut state,
+            &router,
+        );
+
+        assert!(consumed);
+        assert!(state.connect.error.is_some());
+    }
+
+    #[test]
+    fn initialize_state_does_not_refresh_connection_statuses_on_startup() {
+        let state = initialize_state(vec![config::Connect::Postgres(config::PostgresConfig {
+            name: Some("local".to_string()),
+            host: "127.0.0.1".to_string(),
+            user: "postgres".to_string(),
+            db_name: "postgres".to_string(),
+            port: 1,
+            password: None,
+        })]);
+
+        assert_eq!(
+            state.connection_status(0),
+            state::connection::ConnectionStatus::Unknown
+        );
     }
 }
