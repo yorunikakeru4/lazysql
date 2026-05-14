@@ -1,6 +1,7 @@
 pub(crate) mod format;
 pub(crate) mod layout;
 pub(crate) mod screens;
+pub(crate) mod theme;
 pub(crate) mod widgets;
 
 use crate::state::app::AppState;
