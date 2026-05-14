@@ -278,10 +278,10 @@ impl AppState {
             self.connect.error = Some(msg.clone());
             return Err(DbError::NotFound(msg));
         }
-        match &self.connections[idx] {
-            Postgres(_) => match tokio::time::timeout(
+        match self.connections[idx].clone() {
+            conn @ Postgres(_) => match tokio::time::timeout(
                 CONNECTION_STATUS_TIMEOUT,
-                DbClient::new(self.connections[idx].clone()),
+                DbClient::new(conn),
             )
             .await
             {
