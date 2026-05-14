@@ -21,6 +21,8 @@ pub struct RecordsState {
     pub rows_per_page: u16,
     pub error: Option<String>,
     pub min_table_width: u16,
+    pub selected_row: usize,
+    pub selected_col: usize,
 }
 
 impl RecordsState {
@@ -121,6 +123,65 @@ impl RecordsState {
 
         // Add borders (2) + some padding
         self.min_table_width = width.saturating_add(4);
+    }
+
+    /// Move cursor down one row (stays on last row at boundary).
+    #[allow(dead_code)]
+    pub fn move_row_down(&mut self) {
+        if self.rows.is_empty() { return; }
+        if self.selected_row + 1 < self.rows.len() {
+            self.selected_row += 1;
+        }
+    }
+
+    /// Move cursor up one row.
+    #[allow(dead_code)]
+    pub fn move_row_up(&mut self) {
+        self.selected_row = self.selected_row.saturating_sub(1);
+    }
+
+    /// Move cursor right one column.
+    #[allow(dead_code)]
+    pub fn move_col_right(&mut self) {
+        if self.columns.is_empty() { return; }
+        if self.selected_col + 1 < self.columns.len() {
+            self.selected_col += 1;
+        }
+    }
+
+    /// Move cursor left one column.
+    #[allow(dead_code)]
+    pub fn move_col_left(&mut self) {
+        self.selected_col = self.selected_col.saturating_sub(1);
+    }
+
+    /// Returns the value of the currently selected cell, if any.
+    #[allow(dead_code)]
+    pub fn current_cell_value(&self) -> Option<&str> {
+        self.rows
+            .get(self.selected_row)?
+            .get(self.selected_col)?
+            .as_deref()
+    }
+
+    /// Returns the name of the currently selected column, if any.
+    #[allow(dead_code)]
+    pub fn current_col_name(&self) -> Option<&str> {
+        self.columns.get(self.selected_col).map(|c| c.name.as_str())
+    }
+
+    /// Formats the entire selected row as tab-separated values.
+    #[allow(dead_code)]
+    pub fn current_row_tsv(&self) -> String {
+        self.rows
+            .get(self.selected_row)
+            .map(|row| {
+                row.iter()
+                    .map(|v| v.as_deref().unwrap_or("NULL"))
+                    .collect::<Vec<_>>()
+                    .join("\t")
+            })
+            .unwrap_or_default()
     }
 
     /// Returns the number of rows that fit in the current terminal layout.
@@ -278,5 +339,68 @@ mod test {
         state.min_table_width = 20;
 
         assert_eq!(state.rows_per_page_for_terminal(57, 80), 50);
+    }
+
+    #[test]
+    fn selected_row_moves_down() {
+        let mut state = RecordsState::default();
+        state.rows = vec![
+            vec![Some("a".into())],
+            vec![Some("b".into())],
+        ];
+        state.move_row_down();
+        assert_eq!(state.selected_row, 1);
+        state.move_row_down(); // at end, stays
+        assert_eq!(state.selected_row, 1);
+    }
+
+    #[test]
+    fn move_row_up_stops_at_zero() {
+        let mut state = RecordsState::default();
+        state.rows = vec![vec![Some("a".into())]];
+        state.move_row_up();
+        assert_eq!(state.selected_row, 0);
+    }
+
+    #[test]
+    fn move_col_right_stops_at_last() {
+        let mut state = RecordsState::default();
+        state.columns = vec![
+            crate::db::repo::tables_repo::ColumnInfo { name: "a".into() },
+            crate::db::repo::tables_repo::ColumnInfo { name: "b".into() },
+        ];
+        state.move_col_right();
+        assert_eq!(state.selected_col, 1);
+        state.move_col_right();
+        assert_eq!(state.selected_col, 1);
+    }
+
+    #[test]
+    fn reset_clears_selection() {
+        let mut state = RecordsState::for_table("s".into(), "t".into());
+        state.selected_row = 5;
+        state.selected_col = 3;
+        state.reset();
+        assert_eq!(state.selected_row, 0);
+        assert_eq!(state.selected_col, 0);
+    }
+
+    #[test]
+    fn current_cell_value_returns_correct_cell() {
+        let mut state = RecordsState::default();
+        state.columns = vec![
+            crate::db::repo::tables_repo::ColumnInfo { name: "id".into() },
+            crate::db::repo::tables_repo::ColumnInfo { name: "name".into() },
+        ];
+        state.rows = vec![vec![Some("1".into()), Some("alice".into())]];
+        state.selected_col = 1;
+        assert_eq!(state.current_cell_value(), Some("alice"));
+    }
+
+    #[test]
+    fn current_row_tsv_formats_correctly() {
+        let mut state = RecordsState::default();
+        state.rows = vec![vec![Some("1".into()), None, Some("foo".into())]];
+        assert_eq!(state.current_row_tsv(), "1\tNULL\tfoo");
     }
 }
