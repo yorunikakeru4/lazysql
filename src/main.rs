@@ -16,6 +16,7 @@ use state::{
     connection::ActivePane,
     mode::AppMode,
     navigation::{Router, Screen},
+    records::RecordsSource,
 };
 
 #[tokio::main]
@@ -118,7 +119,9 @@ async fn run(
                 handle_database(key, state, router, terminal, &mut pending_g).await?;
             }
             Some(Screen::Inspect) => handle_inspect(key, state, router, terminal).await?,
-            Some(Screen::Records) => handle_records(key, state, router, &mut pending_g).await,
+            Some(Screen::Records) => {
+                handle_records(key, state, router, terminal, &mut pending_g).await?
+            }
             None => break,
         }
     }
@@ -609,8 +612,9 @@ async fn handle_records(
     key: crossterm::event::KeyEvent,
     state: &mut AppState,
     router: &mut Router,
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     pending_g: &mut bool,
-) {
+) -> std::io::Result<()> {
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => {
             state.records.reset();
@@ -637,23 +641,63 @@ async fn handle_records(
                 state.records.move_row_up();
             }
         }
+        KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            load_next_table_records(state, terminal).await?;
+        }
+        KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            load_prev_table_records(state, terminal).await?;
+        }
         KeyCode::Char('l') | KeyCode::Right => state.records.move_col_right(),
         KeyCode::Char('h') | KeyCode::Left => state.records.move_col_left(),
         KeyCode::Char('G') => {
             state.records.selected_row = state.records.rows.len().saturating_sub(1);
         }
-        KeyCode::Char('y') => {
-            if let Some(cell) = state.records.current_cell_value() {
-                let _ = arboard::Clipboard::new().and_then(|mut c| c.set_text(cell.to_string()));
-            }
-        }
-        KeyCode::Char('Y') => {
-            let tsv = state.records.current_row_tsv();
-            let _ = arboard::Clipboard::new().and_then(|mut c| c.set_text(tsv));
-        }
+        KeyCode::Char('n') => load_next_table_records(state, terminal).await?,
+        KeyCode::Char('p') => load_prev_table_records(state, terminal).await?,
         KeyCode::Char('g') => *pending_g = true,
         _ => {}
     }
+    Ok(())
+}
+
+async fn load_next_table_records(
+    state: &mut AppState,
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+) -> std::io::Result<()> {
+    if !matches!(state.records.source, Some(RecordsSource::Table { .. })) {
+        return Ok(());
+    }
+    let Some(table_name) = state.select_next_table_in_selected_schema() else {
+        return Ok(());
+    };
+    load_table_records_by_name(state, terminal, table_name).await
+}
+
+async fn load_prev_table_records(
+    state: &mut AppState,
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+) -> std::io::Result<()> {
+    if !matches!(state.records.source, Some(RecordsSource::Table { .. })) {
+        return Ok(());
+    }
+    let Some(table_name) = state.select_prev_table_in_selected_schema() else {
+        return Ok(());
+    };
+    load_table_records_by_name(state, terminal, table_name).await
+}
+
+async fn load_table_records_by_name(
+    state: &mut AppState,
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    table_name: String,
+) -> std::io::Result<()> {
+    state.search.reset();
+    if state.load_table_by_name(table_name).await.is_err() {
+        return Ok(());
+    }
+    let size = terminal.size()?;
+    let _ = state.load_table_records(size.height, size.width).await;
+    Ok(())
 }
 
 #[cfg(test)]

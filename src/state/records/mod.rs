@@ -166,30 +166,9 @@ impl RecordsState {
         self.selected_col = self.selected_col.saturating_sub(1);
     }
 
-    /// Returns the value of the currently selected cell, if any.
-    pub fn current_cell_value(&self) -> Option<&str> {
-        self.rows
-            .get(self.selected_row)?
-            .get(self.selected_col)?
-            .as_deref()
-    }
-
     /// Returns the name of the currently selected column, if any.
     pub fn current_col_name(&self) -> Option<&str> {
         self.columns.get(self.selected_col).map(|c| c.name.as_str())
-    }
-
-    /// Formats the entire selected row as tab-separated values.
-    pub fn current_row_tsv(&self) -> String {
-        self.rows
-            .get(self.selected_row)
-            .map(|row| {
-                row.iter()
-                    .map(|v| v.as_deref().unwrap_or("NULL"))
-                    .collect::<Vec<_>>()
-                    .join("\t")
-            })
-            .unwrap_or_default()
     }
 
     /// Returns the number of rows that fit in the current terminal layout.
@@ -388,27 +367,6 @@ mod test {
         state.reset();
         assert_eq!(state.selected_row, 0);
         assert_eq!(state.selected_col, 0);
-    }
-
-    #[test]
-    fn current_cell_value_returns_correct_cell() {
-        let mut state = RecordsState::default();
-        state.columns = vec![
-            crate::db::repo::tables_repo::ColumnInfo { name: "id".into() },
-            crate::db::repo::tables_repo::ColumnInfo {
-                name: "name".into(),
-            },
-        ];
-        state.rows = vec![vec![Some("1".into()), Some("alice".into())]];
-        state.selected_col = 1;
-        assert_eq!(state.current_cell_value(), Some("alice"));
-    }
-
-    #[test]
-    fn current_row_tsv_formats_correctly() {
-        let mut state = RecordsState::default();
-        state.rows = vec![vec![Some("1".into()), None, Some("foo".into())]];
-        assert_eq!(state.current_row_tsv(), "1\tNULL\tfoo");
     }
 
     #[test]

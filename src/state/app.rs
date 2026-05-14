@@ -243,6 +243,51 @@ impl AppState {
         };
     }
 
+    /// Moves table selection to the next table in the selected schema.
+    pub fn select_next_table_in_selected_schema(&mut self) -> Option<String> {
+        let schema = self.selected_schema_name()?;
+        let tables = self.table_names_in_schema(&schema);
+        if tables.is_empty() {
+            return None;
+        }
+        self.sync_table_selection_from_records(&schema, &tables);
+        self.table_selected = (self.table_selected + 1) % tables.len();
+        tables.get(self.table_selected).cloned()
+    }
+
+    /// Moves table selection to the previous table in the selected schema.
+    pub fn select_prev_table_in_selected_schema(&mut self) -> Option<String> {
+        let schema = self.selected_schema_name()?;
+        let tables = self.table_names_in_schema(&schema);
+        if tables.is_empty() {
+            return None;
+        }
+        self.sync_table_selection_from_records(&schema, &tables);
+        self.table_selected = if self.table_selected == 0 {
+            tables.len() - 1
+        } else {
+            self.table_selected - 1
+        };
+        tables.get(self.table_selected).cloned()
+    }
+
+    fn sync_table_selection_from_records(&mut self, schema: &str, tables: &[String]) {
+        let Some(RecordsSource::Table {
+            schema: source_schema,
+            table,
+        }) = &self.records.source
+        else {
+            return;
+        };
+        if source_schema != schema {
+            return;
+        }
+        let Some(index) = tables.iter().position(|name| name == table) else {
+            return;
+        };
+        self.table_selected = index;
+    }
+
     /// Clamps `schema_selected` and `table_selected` to the lengths of the
     /// currently filtered lists. Call after every query change.
     pub fn clamp_search_selections(&mut self) {
@@ -721,6 +766,74 @@ mod test {
         state.select_prev_filtered_table("public");
 
         assert_eq!(state.table_selected, 1);
+    }
+
+    #[test]
+    fn select_next_table_in_selected_schema_wraps_and_returns_name() {
+        let mut state = AppState::new(vec![pg_connect()]);
+        state.schemas_raw = vec![
+            TableRef {
+                schema: "public".to_string(),
+                name: "orders".to_string(),
+            },
+            TableRef {
+                schema: "public".to_string(),
+                name: "users".to_string(),
+            },
+        ];
+        state.table_selected = 1;
+
+        let selected = state.select_next_table_in_selected_schema();
+
+        assert_eq!(selected.as_deref(), Some("orders"));
+        assert_eq!(state.table_selected, 0);
+    }
+
+    #[test]
+    fn select_prev_table_in_selected_schema_wraps_and_returns_name() {
+        let mut state = AppState::new(vec![pg_connect()]);
+        state.schemas_raw = vec![
+            TableRef {
+                schema: "public".to_string(),
+                name: "orders".to_string(),
+            },
+            TableRef {
+                schema: "public".to_string(),
+                name: "users".to_string(),
+            },
+        ];
+        state.table_selected = 0;
+
+        let selected = state.select_prev_table_in_selected_schema();
+
+        assert_eq!(selected.as_deref(), Some("users"));
+        assert_eq!(state.table_selected, 1);
+    }
+
+    #[test]
+    fn select_next_table_in_selected_schema_uses_current_records_table() {
+        let mut state = AppState::new(vec![pg_connect()]);
+        state.schemas_raw = vec![
+            TableRef {
+                schema: "public".to_string(),
+                name: "orders".to_string(),
+            },
+            TableRef {
+                schema: "public".to_string(),
+                name: "users".to_string(),
+            },
+            TableRef {
+                schema: "public".to_string(),
+                name: "widgets".to_string(),
+            },
+        ];
+        state.records = RecordsState::for_table("public".to_string(), "users".to_string());
+        state.table_selected = 0;
+
+        let selected = state.select_next_table_in_selected_schema();
+
+        assert_eq!(selected.as_deref(), Some("widgets"));
+        assert_eq!(state.table_selected, 2);
     }
 
     #[test]

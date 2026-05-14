@@ -61,13 +61,15 @@ fn sections_for(screen: &Screen) -> &'static [HelpSection] {
                 entries: &[
                     ("j/k", "row down/up"),
                     ("h/l", "col left/right"),
+                    ("n/p", "next/prev table"),
+                    ("C-←/C-→", "prev/next table"),
                     ("gg", "first row"),
                     ("G", "last row"),
                 ],
             },
             HelpSection {
                 title: "actions",
-                entries: &[("Y", "yank row (TSV)"), ("y", "yank cell"), ("q", "close")],
+                entries: &[("q", "close")],
             },
         ],
     }

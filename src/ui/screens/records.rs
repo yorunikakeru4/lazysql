@@ -11,8 +11,7 @@ use ratatui::{
 const HINTS: &[(&str, &str)] = &[
     ("j/k", "row"),
     ("h/l", "col"),
-    ("yy", "yank row"),
-    ("y", "yank cell"),
+    ("n/p", "table"),
     ("q", "close"),
 ];
 
