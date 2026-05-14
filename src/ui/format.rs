@@ -111,17 +111,18 @@ pub(crate) fn format_records_vertical(records: &RecordsState) -> String {
 }
 
 /// Formats table fields as aligned columns.
+#[allow(dead_code)]
 pub(crate) fn format_fields(fields: &[&TableField]) -> String {
     const COLUMN_GAP: &str = "   ";
 
     let mut rows: Vec<(&str, &str, &str, String, String)> = Vec::with_capacity(fields.len());
     for f in fields {
         let constraint = f
-            .constraint_type
+            .constraint
             .as_ref()
             .map(|c| format!("{c:?}"))
             .unwrap_or_default();
-        let default = f.default.clone().unwrap_or_default();
+        let default = f.default_value.clone().unwrap_or_default();
         rows.push((&f.name, &f.data_type, &f.is_nullable, constraint, default));
     }
 
@@ -184,15 +185,15 @@ mod test {
             name: "id".to_string(),
             data_type: "integer".to_string(),
             is_nullable: "NO".to_string(),
-            constraint_type: None,
-            default: None,
+            constraint: None,
+            default_value: None,
         };
         let long = TableField {
             name: "payload".to_string(),
             data_type: "character varying with very very long suffix".to_string(),
             is_nullable: "YES".to_string(),
-            constraint_type: None,
-            default: None,
+            constraint: None,
+            default_value: None,
         };
 
         let rendered = format_fields(&[&short, &long]);
@@ -209,8 +210,8 @@ mod test {
             name: "id".to_string(),
             data_type: "integer".to_string(),
             is_nullable: "NO".to_string(),
-            constraint_type: None,
-            default: None,
+            constraint: None,
+            default_value: None,
         };
 
         let rendered = format_fields(&[&field]);

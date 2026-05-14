@@ -1,3 +1,6 @@
+// Suppress dead_code warnings during incremental UI migration (Tasks 1-16).
+// Remove after Task 17 wires everything together.
+#![allow(dead_code)]
 mod config;
 mod db;
 mod state;
