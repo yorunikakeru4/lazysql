@@ -69,8 +69,10 @@ async fn run(
             if key.code == KeyCode::Char('g') {
                 match router.current() {
                     Some(Screen::Connect) => state.connect.selected = 0,
-                    Some(Screen::Schemas) => state.schema_selected = 0,
-                    Some(Screen::Tables) => state.table_selected = 0,
+                    Some(Screen::Database) => {
+                        state.schema_selected = 0;
+                        state.table_selected = 0;
+                    }
                     _ => {}
                 }
                 continue;
@@ -135,27 +137,17 @@ async fn run(
                     state.clamp_search_selections();
                 }
                 KeyCode::Down | KeyCode::Char('j') => match router.current() {
-                    Some(Screen::Schemas) => {
+                    Some(Screen::Database) => {
                         let len = state.filtered_schema_names().len();
                         if len > 0 {
                             state.schema_selected = (state.schema_selected + 1) % len;
                         }
                     }
-                    Some(Screen::Tables) => {
-                        let schema = state.selected_schema_name().unwrap_or_default();
-                        let len = state.filtered_table_names(&schema).len();
-                        if len > 0 {
-                            state.table_selected = (state.table_selected + 1) % len;
-                        }
-                    }
                     _ => {}
                 },
                 KeyCode::Up | KeyCode::Char('k') => match router.current() {
-                    Some(Screen::Schemas) => {
+                    Some(Screen::Database) => {
                         state.schema_selected = state.schema_selected.saturating_sub(1);
-                    }
-                    Some(Screen::Tables) => {
-                        state.table_selected = state.table_selected.saturating_sub(1);
                     }
                     _ => {}
                 },
@@ -183,7 +175,7 @@ async fn run(
                         && state.connect_selected().await.is_ok()
                         && state.load_schemas().await.is_ok()
                     {
-                        router.push(Screen::Schemas);
+                        router.push(Screen::Database);
                     }
                 }
                 // h at root screen is a no-op (nowhere to go back to)
@@ -229,98 +221,37 @@ async fn run(
                 _ => {}
             },
 
-            Some(Screen::Schemas) => {
-                let len = state.filtered_schema_names().len();
-                match key.code {
-                    KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
-                        state.search.reset();
-                        router.pop();
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        if len > 0 {
-                            state.schema_selected = (state.schema_selected + 1) % len;
-                        }
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        state.schema_selected = state.schema_selected.saturating_sub(1);
-                    }
-                    KeyCode::Char('l') | KeyCode::Enter => {
-                        let chosen = state
-                            .filtered_schema_names()
-                            .into_iter()
-                            .nth(state.schema_selected);
-                        state.search.reset();
-                        state.table_selected = 0;
-                        if let Some(name) = chosen {
-                            state.schema_selected = state
-                                .schema_names()
-                                .iter()
-                                .position(|s| *s == name)
-                                .unwrap_or(0);
-                        }
-                        router.push(Screen::Tables);
-                    }
-                    KeyCode::Char('G') => {
-                        if len > 0 {
-                            state.schema_selected = len - 1;
-                        }
-                    }
-                    KeyCode::Char('g') => pending_g = true,
-                    KeyCode::Char('/') => state.search.open(),
-                    KeyCode::Char(':') | KeyCode::Char('с') => {
-                        if state.current_db.is_some() {
-                            state.sql_input.open();
-                        }
-                    }
-                    _ => {}
+            Some(Screen::Database) => match key.code {
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
+                    state.search.reset();
+                    router.pop();
                 }
-            }
-
-            Some(Screen::Tables) => {
-                let schema = state.selected_schema_name().unwrap_or_default();
-                let len = state.filtered_table_names(&schema).len();
-                match key.code {
-                    KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
-                        state.search.reset();
-                        router.pop();
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let len = state.filtered_schema_names().len();
+                    if len > 0 {
+                        state.schema_selected = (state.schema_selected + 1) % len;
                     }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        if len > 0 {
-                            state.table_selected = (state.table_selected + 1) % len;
-                        }
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        state.table_selected = state.table_selected.saturating_sub(1);
-                    }
-                    KeyCode::Char('l') | KeyCode::Enter => {
-                        let chosen = state
-                            .filtered_table_names(&schema)
-                            .into_iter()
-                            .nth(state.table_selected);
-                        state.search.reset();
-                        if let Some(name) = chosen
-                            && state.load_table_by_name(name).await.is_ok()
-                        {
-                            router.push(Screen::TableView);
-                        }
-                    }
-                    KeyCode::Char('G') => {
-                        if len > 0 {
-                            state.table_selected = len - 1;
-                        }
-                    }
-                    KeyCode::Char('g') => pending_g = true,
-                    KeyCode::Char('/') => state.search.open(),
-                    KeyCode::Char(':') | KeyCode::Char('с') => {
-                        if state.current_db.is_some() {
-                            state.sql_input.open();
-                        }
-                    }
-                    _ => {}
                 }
-            }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    state.schema_selected = state.schema_selected.saturating_sub(1);
+                }
+                KeyCode::Char('G') => {
+                    let len = state.filtered_schema_names().len();
+                    if len > 0 {
+                        state.schema_selected = len - 1;
+                    }
+                }
+                KeyCode::Char('g') => pending_g = true,
+                KeyCode::Char('/') => state.search.open(),
+                KeyCode::Char(':') | KeyCode::Char('с') => {
+                    if state.current_db.is_some() {
+                        state.sql_input.open();
+                    }
+                }
+                _ => {}
+            },
 
-            Some(Screen::TableView) => match key.code {
+            Some(Screen::Inspect) => match key.code {
                 KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
                     state.search.reset();
                     router.pop();
@@ -329,16 +260,6 @@ async fn run(
                 KeyCode::Char(':') | KeyCode::Char('с') => {
                     if state.current_db.is_some() {
                         state.sql_input.open();
-                    }
-                }
-                KeyCode::Char('s') => {
-                    let size = terminal.size()?;
-                    if state
-                        .load_table_records(size.height, size.width)
-                        .await
-                        .is_ok()
-                    {
-                        router.push(Screen::Records);
                     }
                 }
                 _ => {}
