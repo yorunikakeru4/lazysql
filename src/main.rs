@@ -139,20 +139,14 @@ async fn run(
                     state.search.query.pop();
                     state.clamp_search_selections();
                 }
-                KeyCode::Down | KeyCode::Char('j') => match router.current() {
-                    Some(Screen::Database) => {
-                        let len = state.filtered_schema_names().len();
-                        if len > 0 {
-                            state.schema_selected = (state.schema_selected + 1) % len;
-                        }
+                KeyCode::Down | KeyCode::Char('j') => if let Some(Screen::Database) = router.current() {
+                    let len = state.filtered_schema_names().len();
+                    if len > 0 {
+                        state.schema_selected = (state.schema_selected + 1) % len;
                     }
-                    _ => {}
                 },
-                KeyCode::Up | KeyCode::Char('k') => match router.current() {
-                    Some(Screen::Database) => {
-                        state.schema_selected = state.schema_selected.saturating_sub(1);
-                    }
-                    _ => {}
+                KeyCode::Up | KeyCode::Char('k') => if let Some(Screen::Database) = router.current() {
+                    state.schema_selected = state.schema_selected.saturating_sub(1);
                 },
                 KeyCode::Char(c) => {
                     state.search.query.push(c);
