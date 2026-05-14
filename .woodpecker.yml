@@ -1,0 +1,44 @@
+steps:
+  checks:
+    image: rust:1.88
+    commands:
+      - rustup component add rustfmt clippy
+      - cargo fmt --check
+      - cargo clippy -- -D warnings
+      - cargo build
+    when:
+      event:
+        - push
+        - pull_request
+
+  integration-tests:
+    image: rust:1.88
+    privileged: true
+    depends_on:
+      - checks
+    environment:
+      PODMAN_USERNS: keep-id
+      PODMAN_IGNORE_CGROUPSV1_WARNING: "1"
+    commands:
+      - |
+        set -euo pipefail
+        apt-get update
+        apt-get install -y --no-install-recommends \
+          ca-certificates \
+          curl \
+          podman \
+          podman-compose \
+          uidmap \
+          slirp4netns \
+          fuse-overlayfs
+        rm -rf /var/lib/apt/lists/*
+      - |
+        set -euo pipefail
+        if ! command -v just >/dev/null 2>&1; then
+          cargo install just --locked
+        fi
+      - just test
+    when:
+      event:
+        - push
+        - pull_request
