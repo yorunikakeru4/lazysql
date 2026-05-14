@@ -1,13 +1,13 @@
 use crate::state::app::AppState;
 use crate::state::connection::{ConnectionMeta, ConnectionStatus};
-use crate::ui::{theme, widgets};
+use crate::ui::{layout, theme, widgets};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::Color,
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Cell, Paragraph, Row, Table, TableState},
+    widgets::{Block, Cell, Clear, Paragraph, Row, Table, TableState},
 };
 
 const HINTS: &[(&str, &str)] = &[
@@ -151,6 +151,23 @@ fn selected_row_highlight_style() -> Style {
     Style::new().bg(theme::BG_SEL)
 }
 
+/// Renders a centered error popup when a connection attempt failed.
+pub(crate) fn render_connect_error_popup(frame: &mut Frame, state: &AppState) {
+    let Some(err) = &state.connect.error else {
+        return;
+    };
+
+    let popup_area = layout::centered_rect(60, 7, frame.area());
+    frame.render_widget(Clear, popup_area);
+
+    let paragraph = Paragraph::new(format!("{}\n\nPress Enter or Esc to dismiss", err)).block(
+        Block::bordered()
+            .title(" Connection Error ")
+            .style(Style::default().fg(Color::Red)),
+    );
+    frame.render_widget(paragraph, popup_area);
+}
+
 fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
     let metas: Vec<ConnectionMeta> = state.connections.iter().map(ConnectionMeta::from).collect();
     let selected = state
@@ -204,6 +221,45 @@ fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::state::app::AppState;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect()
+    }
+
+    #[test]
+    fn connect_error_popup_renders_error_message() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::new(vec![]);
+        state.connect.error = Some("connection refused".to_string());
+
+        terminal
+            .draw(|frame| render_connect_error_popup(frame, &state))
+            .unwrap();
+
+        assert!(buffer_text(&terminal).contains("connection refused"));
+    }
+
+    #[test]
+    fn connect_error_popup_renders_nothing_when_no_error() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let state = AppState::new(vec![]);
+
+        terminal
+            .draw(|frame| render_connect_error_popup(frame, &state))
+            .unwrap();
+
+        assert!(!buffer_text(&terminal).contains("Error"));
+    }
 
     #[test]
     fn status_indicator_uses_expected_labels_and_colors() {

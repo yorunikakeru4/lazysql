@@ -9,9 +9,9 @@ use ratatui::{
 };
 
 const HINTS: &[(&str, &str)] = &[
-    ("j/k", "row"),
-    ("h/l", "col"),
-    ("n/p", "table"),
+    ("j/k", "row/field"),
+    ("h/l", "field/row"),
+    ("n/p", "page"),
     ("q", "close"),
 ];
 
@@ -125,18 +125,42 @@ fn render_table(frame: &mut Frame, area: Rect, state: &AppState) {
 
 fn render_expanded(frame: &mut Frame, area: Rect, state: &AppState) {
     let records = &state.records;
-    let mut lines = Vec::new();
+    let mut rows = Vec::new();
     for (row_idx, row) in records.rows.iter().enumerate() {
         let record_num = records.offset + row_idx as u64 + 1;
-        lines.push(format!("-[ RECORD {} ]", record_num));
+        let is_selected_record = row_idx == records.selected_row;
+        let title_style = Style::new().fg(theme::FG4).bold();
+        rows.push(
+            Row::new(vec![
+                Cell::from(format!("-[ RECORD {} ]", record_num)),
+                Cell::from(""),
+            ])
+            .style(title_style),
+        );
+
         for (col_idx, col) in records.columns.iter().enumerate() {
             let text = row
                 .get(col_idx)
                 .and_then(|value| value.as_deref())
                 .unwrap_or("NULL");
-            lines.push(format!("{} | {}", col.name, truncate_cell(text)));
+            let is_selected_field = is_selected_record && col_idx == records.selected_col;
+            let name_style = if is_selected_field {
+                Style::new().fg(theme::ORANGE).bold()
+            } else {
+                Style::new().fg(theme::FG4)
+            };
+            let value_style = if is_selected_field {
+                Style::new().fg(theme::ORANGE)
+            } else {
+                Style::new().fg(theme::FG3)
+            };
+
+            rows.push(Row::new(vec![
+                Cell::from(col.name.clone()).style(name_style),
+                Cell::from(truncate_cell(text)).style(value_style),
+            ]));
         }
-        lines.push(String::new());
+        rows.push(Row::new(vec![Cell::from(""), Cell::from("")]));
     }
 
     let title = format!(
@@ -145,14 +169,22 @@ fn render_expanded(frame: &mut Frame, area: Rect, state: &AppState) {
         records.current_page(),
         records.total_pages()
     );
-    frame.render_widget(
-        Paragraph::new(lines.join("\n")).block(
-            Block::bordered()
-                .title(title)
-                .border_style(Style::new().fg(theme::BG3)),
-        ),
-        area,
+    let name_width = records
+        .columns
+        .iter()
+        .map(|col| col.name.chars().count() as u16)
+        .max()
+        .unwrap_or(1)
+        .saturating_add(2)
+        .min(area.width.saturating_sub(8).max(1));
+    let widths = [Constraint::Length(name_width), Constraint::Fill(1)];
+    let table = Table::new(rows, widths).block(
+        Block::bordered()
+            .title(title)
+            .border_style(Style::new().fg(theme::BG3)),
     );
+
+    frame.render_widget(table, area);
 }
 
 fn truncate_cell(text: &str) -> String {
@@ -165,4 +197,83 @@ fn truncate_cell(text: &str) -> String {
         .map(|(i, _)| i)
         .unwrap_or(text.len());
     format!("{}…", &text[..boundary])
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::db::repo::tables_repo::ColumnInfo;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn app_with_expanded_records() -> AppState {
+        let mut state = AppState::new(vec![]);
+        state.records = crate::state::records::RecordsState::for_table(
+            "public".to_string(),
+            "notifications".to_string(),
+        );
+        state.records.columns = vec![
+            ColumnInfo {
+                name: "id".to_string(),
+            },
+            ColumnInfo {
+                name: "title".to_string(),
+            },
+        ];
+        state.records.rows = vec![vec![
+            Some("19".to_string()),
+            Some("Notification".to_string()),
+        ]];
+        state.records.total_count = 1;
+        state.records.rows_per_page = 1;
+        state.records.min_table_width = 200;
+        state.records.selected_col = 1;
+        state
+    }
+
+    fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
+        let buffer = terminal.backend().buffer();
+        let mut text = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                let cell = buffer.cell((x, y)).expect("cell in bounds");
+                text.push_str(cell.symbol());
+            }
+            text.push('\n');
+        }
+        text
+    }
+
+    #[test]
+    fn expanded_records_render_as_two_columns_without_pipe_separator() {
+        let state = app_with_expanded_records();
+        let backend = TestBackend::new(60, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+
+        terminal
+            .draw(|frame| render(frame, &state))
+            .expect("draw records");
+
+        let text = buffer_text(&terminal);
+        assert!(!text.contains("id | 19"));
+        assert!(text.contains("id"));
+        assert!(text.contains("19"));
+    }
+
+    #[test]
+    fn expanded_records_highlight_selected_field_value_without_background() {
+        let state = app_with_expanded_records();
+        let backend = TestBackend::new(60, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+
+        terminal
+            .draw(|frame| render(frame, &state))
+            .expect("draw records");
+
+        let highlighted = terminal.backend().buffer().content().iter().any(|cell| {
+            cell.symbol() == "N"
+                && cell.bg == ratatui::style::Color::Reset
+                && cell.fg == theme::ORANGE
+        });
+        assert!(highlighted);
+    }
 }

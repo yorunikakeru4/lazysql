@@ -16,7 +16,6 @@ use state::{
     connection::ActivePane,
     mode::AppMode,
     navigation::{Router, Screen},
-    records::RecordsSource,
 };
 
 #[tokio::main]
@@ -51,7 +50,6 @@ async fn run(
     router: &mut Router,
 ) -> std::io::Result<()> {
     let mut events = EventStream::new();
-    let mut pending_g = false;
 
     loop {
         terminal.draw(|frame| ui::render(frame, state, router))?;
@@ -112,15 +110,16 @@ async fn run(
                 if key.code == KeyCode::Char('q') {
                     break;
                 }
-                handle_connect(key, state, router, &mut pending_g).await;
+                handle_connect(key, state, router).await;
             }
             Some(Screen::AddConnection) => handle_add_connection(key, state, router).await,
             Some(Screen::Database) => {
-                handle_database(key, state, router, terminal, &mut pending_g).await?;
+                handle_database(key, state, router, terminal).await?;
             }
             Some(Screen::Inspect) => handle_inspect(key, state, router, terminal).await?,
             Some(Screen::Records) => {
-                handle_records(key, state, router, terminal, &mut pending_g).await?
+                let terminal_width = terminal.size()?.width;
+                handle_records(key, state, router, terminal_width).await?
             }
             None => break,
         }
@@ -254,7 +253,7 @@ fn handle_search(key: crossterm::event::KeyEvent, state: &mut AppState, router: 
                 _ => state.clamp_search_selections(),
             }
         }
-        KeyCode::Down | KeyCode::Char('j') => match router.current() {
+        KeyCode::Down => match router.current() {
             Some(Screen::Connect) => state.select_next_filtered_connection(),
             Some(Screen::Database) => {
                 if state.active_pane == ActivePane::Schemas {
@@ -272,7 +271,7 @@ fn handle_search(key: crossterm::event::KeyEvent, state: &mut AppState, router: 
             }
             _ => {}
         },
-        KeyCode::Up | KeyCode::Char('k') => match router.current() {
+        KeyCode::Up => match router.current() {
             Some(Screen::Connect) => state.select_prev_filtered_connection(),
             Some(Screen::Database) => {
                 if state.active_pane == ActivePane::Schemas {
@@ -301,7 +300,6 @@ async fn handle_connect(
     key: crossterm::event::KeyEvent,
     state: &mut AppState,
     router: &mut Router,
-    pending_g: &mut bool,
 ) {
     match key.code {
         KeyCode::Down | KeyCode::Char('j') => {
@@ -323,19 +321,16 @@ async fn handle_connect(
             state.mode = AppMode::Search;
         }
         KeyCode::Char('a') => {
-            *pending_g = false;
             state.form.reset();
             state.mode = AppMode::Insert;
             router.push(Screen::AddConnection);
         }
 
         KeyCode::Char('r') => {
-            *pending_g = false;
             state.refresh_connection_statuses().await;
         }
 
         KeyCode::Char('e') => {
-            *pending_g = false;
             if let Some(config::Connect::Postgres(cfg)) =
                 state.connections.get(state.connect.selected)
             {
@@ -348,7 +343,6 @@ async fn handle_connect(
             }
         }
         KeyCode::Char('d') => {
-            *pending_g = false;
             if !state.connections.is_empty() {
                 state.remove_connection_at(state.connect.selected);
                 if state.connect.selected >= state.connections.len() {
@@ -370,7 +364,7 @@ async fn handle_connect(
                 router.push(Screen::Database);
             }
         }
-        KeyCode::Char('h') => {} // no-op at root
+        KeyCode::Char('h') | KeyCode::Left => {} // no-op at root
         _ => {}
     }
 }
@@ -437,7 +431,6 @@ async fn handle_database(
     state: &mut AppState,
     router: &mut Router,
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    pending_g: &mut bool,
 ) -> std::io::Result<()> {
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => {
@@ -496,8 +489,7 @@ async fn handle_database(
                 }
             }
         }
-        KeyCode::Char('g') => *pending_g = true,
-        KeyCode::Char('l') | KeyCode::Enter => {
+        KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => {
             if state.active_pane == ActivePane::Schemas {
                 // Move to Tables pane, reset table selection
                 let chosen = state
@@ -612,98 +604,186 @@ async fn handle_records(
     key: crossterm::event::KeyEvent,
     state: &mut AppState,
     router: &mut Router,
-    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    pending_g: &mut bool,
+    terminal_width: u16,
 ) -> std::io::Result<()> {
+    let is_vertical = state.records.min_table_width > terminal_width;
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => {
             state.records.reset();
             state.mode = AppMode::Normal;
             router.pop();
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if state.records.selected_row + 1 >= state.records.rows.len()
-                && state.records.has_next_page()
-            {
-                state.records.next_page();
-                let _ = state.fetch_records_page().await;
-                state.records.selected_row = 0;
-            } else {
-                state.records.move_row_down();
-            }
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            if state.records.selected_row == 0 && state.records.has_prev_page() {
-                state.records.prev_page();
-                let _ = state.fetch_records_page().await;
-                state.records.selected_row = state.records.rows.len().saturating_sub(1);
-            } else {
-                state.records.move_row_up();
-            }
-        }
-        KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            load_next_table_records(state, terminal).await?;
-        }
-        KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            load_prev_table_records(state, terminal).await?;
-        }
+        KeyCode::Down | KeyCode::Char('j') if is_vertical => state.records.move_col_right(),
+        KeyCode::Up | KeyCode::Char('k') if is_vertical => state.records.move_col_left(),
+        KeyCode::Char('l') | KeyCode::Right if is_vertical => move_record_down(state, true).await,
+        KeyCode::Char('h') | KeyCode::Left if is_vertical => move_record_up(state, true).await,
+        KeyCode::Down | KeyCode::Char('j') => move_record_down(state, false).await,
+        KeyCode::Up | KeyCode::Char('k') => move_record_up(state, false).await,
         KeyCode::Char('l') | KeyCode::Right => state.records.move_col_right(),
         KeyCode::Char('h') | KeyCode::Left => state.records.move_col_left(),
         KeyCode::Char('G') => {
             state.records.selected_row = state.records.rows.len().saturating_sub(1);
         }
-        KeyCode::Char('n') => load_next_table_records(state, terminal).await?,
-        KeyCode::Char('p') => load_prev_table_records(state, terminal).await?,
-        KeyCode::Char('g') => *pending_g = true,
+        KeyCode::Char('n') => {
+            if state.records.has_next_page() {
+                state.records.next_page();
+                let _ = state.fetch_records_page().await;
+                state.records.selected_row = 0;
+            }
+        }
+        KeyCode::Char('p') => {
+            if state.records.has_prev_page() {
+                state.records.prev_page();
+                let _ = state.fetch_records_page().await;
+                state.records.selected_row = 0;
+            }
+        }
         _ => {}
     }
     Ok(())
 }
 
-async fn load_next_table_records(
-    state: &mut AppState,
-    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-) -> std::io::Result<()> {
-    if !matches!(state.records.source, Some(RecordsSource::Table { .. })) {
-        return Ok(());
+async fn move_record_down(state: &mut AppState, reset_field: bool) {
+    if state.records.selected_row + 1 >= state.records.rows.len() && state.records.has_next_page() {
+        state.records.next_page();
+        let _ = state.fetch_records_page().await;
+        state.records.selected_row = 0;
+    } else {
+        state.records.move_row_down();
     }
-    let Some(table_name) = state.select_next_table_in_selected_schema() else {
-        return Ok(());
-    };
-    load_table_records_by_name(state, terminal, table_name).await
+    if reset_field {
+        state.records.selected_col = 0;
+    }
 }
 
-async fn load_prev_table_records(
-    state: &mut AppState,
-    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-) -> std::io::Result<()> {
-    if !matches!(state.records.source, Some(RecordsSource::Table { .. })) {
-        return Ok(());
+async fn move_record_up(state: &mut AppState, reset_field: bool) {
+    if state.records.selected_row == 0 && state.records.has_prev_page() {
+        state.records.prev_page();
+        let _ = state.fetch_records_page().await;
+        state.records.selected_row = state.records.rows.len().saturating_sub(1);
+    } else {
+        state.records.move_row_up();
     }
-    let Some(table_name) = state.select_prev_table_in_selected_schema() else {
-        return Ok(());
-    };
-    load_table_records_by_name(state, terminal, table_name).await
-}
-
-async fn load_table_records_by_name(
-    state: &mut AppState,
-    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    table_name: String,
-) -> std::io::Result<()> {
-    state.search.reset();
-    if state.load_table_by_name(table_name).await.is_err() {
-        return Ok(());
+    if reset_field {
+        state.records.selected_col = 0;
     }
-    let size = terminal.size()?;
-    let _ = state.load_table_records(size.height, size.width).await;
-    Ok(())
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
     use crossterm::event::KeyEvent;
+
+    fn records_state_with_layout(min_table_width: u16) -> AppState {
+        let mut state = AppState::new(vec![]);
+        state.records.columns = vec![
+            crate::db::repo::tables_repo::ColumnInfo {
+                name: "id".to_string(),
+            },
+            crate::db::repo::tables_repo::ColumnInfo {
+                name: "title".to_string(),
+            },
+        ];
+        state.records.rows = vec![
+            vec![Some("1".to_string()), Some("hello".to_string())],
+            vec![Some("2".to_string()), Some("world".to_string())],
+        ];
+        state.records.rows_per_page = 2;
+        state.records.total_count = 2;
+        state.records.min_table_width = min_table_width;
+        state
+    }
+
+    #[tokio::test]
+    async fn records_j_moves_row_down_in_horizontal_layout() {
+        let mut state = records_state_with_layout(20);
+        let mut router = Router::new();
+
+        handle_records(
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
+            &mut state,
+            &mut router,
+            60,
+        )
+        .await
+        .expect("handle records");
+
+        assert_eq!(state.records.selected_row, 1);
+        assert_eq!(state.records.selected_col, 0);
+    }
+
+    #[tokio::test]
+    async fn records_l_moves_field_right_in_horizontal_layout() {
+        let mut state = records_state_with_layout(20);
+        let mut router = Router::new();
+
+        handle_records(
+            KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE),
+            &mut state,
+            &mut router,
+            60,
+        )
+        .await
+        .expect("handle records");
+
+        assert_eq!(state.records.selected_row, 0);
+        assert_eq!(state.records.selected_col, 1);
+    }
+
+    #[tokio::test]
+    async fn records_j_moves_field_down_in_vertical_layout() {
+        let mut state = records_state_with_layout(200);
+        let mut router = Router::new();
+
+        handle_records(
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
+            &mut state,
+            &mut router,
+            60,
+        )
+        .await
+        .expect("handle records");
+
+        assert_eq!(state.records.selected_row, 0);
+        assert_eq!(state.records.selected_col, 1);
+    }
+
+    #[tokio::test]
+    async fn records_k_moves_field_up_in_vertical_layout() {
+        let mut state = records_state_with_layout(200);
+        state.records.selected_col = 1;
+        let mut router = Router::new();
+
+        handle_records(
+            KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE),
+            &mut state,
+            &mut router,
+            60,
+        )
+        .await
+        .expect("handle records");
+
+        assert_eq!(state.records.selected_row, 0);
+        assert_eq!(state.records.selected_col, 0);
+    }
+
+    #[tokio::test]
+    async fn records_l_moves_row_down_in_vertical_layout() {
+        let mut state = records_state_with_layout(200);
+        let mut router = Router::new();
+
+        handle_records(
+            KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE),
+            &mut state,
+            &mut router,
+            60,
+        )
+        .await
+        .expect("handle records");
+
+        assert_eq!(state.records.selected_row, 1);
+        assert_eq!(state.records.selected_col, 0);
+    }
 
     #[test]
     fn connect_error_popup_enter_dismisses_and_consumes_input() {

@@ -59,11 +59,9 @@ fn sections_for(screen: &Screen) -> &'static [HelpSection] {
             HelpSection {
                 title: "navigate",
                 entries: &[
-                    ("j/k", "row down/up"),
-                    ("h/l", "col left/right"),
-                    ("n/p", "next/prev table"),
-                    ("C-←/C-→", "prev/next table"),
-                    ("gg", "first row"),
+                    ("j/k", "row or field"),
+                    ("h/l", "field or row"),
+                    ("n/p", "next/prev page"),
                     ("G", "last row"),
                 ],
             },

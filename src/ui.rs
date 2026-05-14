@@ -17,6 +17,10 @@ pub fn render(frame: &mut Frame, state: &AppState, router: &Router) {
         None => {}
     }
 
+    if matches!(router.current(), Some(Screen::Connect)) {
+        screens::connect::render_connect_error_popup(frame, state);
+    }
+
     if state.sql_input.active {
         widgets::sql_editor::render(frame, state);
     }
