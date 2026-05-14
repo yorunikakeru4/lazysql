@@ -24,4 +24,10 @@ pub fn render(frame: &mut Frame, state: &AppState, router: &Router) {
     if state.sql_input.has_result() {
         widgets::sql::render_result_popup(frame, state);
     }
+
+    if state.help_visible
+        && let Some(screen) = router.current()
+    {
+        widgets::help::render(frame, screen);
+    }
 }
