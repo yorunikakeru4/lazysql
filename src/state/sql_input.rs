@@ -206,13 +206,18 @@ impl SqlInputState {
             .next()
             .is_some_and(char::is_whitespace)
         {
-            let next = absolute_break
-                + self.query[absolute_break..]
-                    .chars()
-                    .next()
-                    .map(char::len_utf8)
-                    .unwrap_or(0);
+            let ws_len = self.query[absolute_break..]
+                .chars()
+                .next()
+                .map(char::len_utf8)
+                .unwrap_or(0);
+            let next = absolute_break + ws_len;
             self.query.replace_range(absolute_break..next, "\n");
+            // Adjust cursor when replaced whitespace was multibyte and cursor sat
+            // after it: the replacement shrinks the string by (ws_len - 1) bytes.
+            if ws_len > 1 && self.cursor_pos >= next {
+                self.cursor_pos -= ws_len - 1;
+            }
         } else {
             self.query.insert(absolute_break, '\n');
             if self.cursor_pos >= absolute_break {

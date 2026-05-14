@@ -263,6 +263,9 @@ async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router
             state.refresh_connection_statuses().await;
         }
         KeyCode::Char('e') => {
+            if state.selected_filtered_connection_position().is_none() {
+                return;
+            }
             if let Some(config::Connect::Postgres(cfg)) =
                 state.connections.get(state.connect.selected)
             {
