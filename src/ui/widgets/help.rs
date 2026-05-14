@@ -56,11 +56,7 @@ fn sections_for(screen: &Screen) -> &'static [HelpSection] {
             },
             HelpSection {
                 title: "SQL editor",
-                entries: &[
-                    ("Ctrl+E/↵", "run query"),
-                    ("Ctrl+↑/↓", "history"),
-                    ("Esc", "close editor"),
-                ],
+                entries: &[("Ctrl+E/↵", "run query"), ("Esc", "close editor")],
             },
         ],
         Screen::Inspect => &[HelpSection {
