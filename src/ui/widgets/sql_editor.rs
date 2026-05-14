@@ -75,7 +75,10 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     } else {
         "—"
     };
-    let title = format!(" SQL Editor ─── {} ", driver);
+    let title = format!(
+        " SQL Editor ─── {} ─── Ctrl+E execute · Enter newline · Tab indent · Esc close ",
+        driver
+    );
 
     let query = &state.sql_input.query;
     let (cursor_line, cursor_col) = state.sql_input.cursor_line_col();
@@ -89,34 +92,9 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
                 Style::new().fg(theme::FG4),
             );
 
-            if line_idx == cursor_line {
-                let col = cursor_col.min(line_text.len());
-                let before = &line_text[..col];
-                let cursor_char = line_text[col..]
-                    .chars()
-                    .next()
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| " ".into());
-                let after_start = col + cursor_char.len();
-                let after = if after_start <= line_text.len() {
-                    &line_text[after_start..]
-                } else {
-                    ""
-                };
-
-                let mut spans = vec![line_num];
-                spans.extend(highlight_sql(before));
-                spans.push(Span::styled(
-                    cursor_char,
-                    Style::new().bg(theme::FG0).fg(theme::BG0),
-                ));
-                spans.extend(highlight_sql(after));
-                Line::from(spans)
-            } else {
-                let mut spans = vec![line_num];
-                spans.extend(highlight_sql(line_text));
-                Line::from(spans)
-            }
+            let mut spans = vec![line_num];
+            spans.extend(highlight_sql(line_text));
+            Line::from(spans)
         })
         .collect();
 

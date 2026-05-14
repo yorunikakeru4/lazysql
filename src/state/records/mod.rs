@@ -100,22 +100,11 @@ impl RecordsState {
     /// Calculates minimum width needed for table display.
     pub fn calculate_min_table_width(&mut self) {
         const COL_GAP: u16 = 3;
+        let widths = self.table_column_widths();
         let mut width: u16 = 0;
 
-        for (i, col) in self.columns.iter().enumerate() {
-            let col_width = col.name.len().max(
-                self.rows
-                    .iter()
-                    .map(|r| {
-                        r.get(i)
-                            .and_then(|v| v.as_ref())
-                            .map(|s| s.chars().count().min(MAX_CELL_LEN))
-                            .unwrap_or(4)
-                    })
-                    .max()
-                    .unwrap_or(0),
-            );
-            width = width.saturating_add(col_width as u16);
+        for (i, col_width) in widths.iter().enumerate() {
+            width = width.saturating_add(*col_width);
             if i < self.columns.len() - 1 {
                 width = width.saturating_add(COL_GAP);
             }
@@ -125,38 +114,59 @@ impl RecordsState {
         self.min_table_width = width.saturating_add(4);
     }
 
+    /// Returns compact display widths for visible table columns.
+    pub fn table_column_widths(&self) -> Vec<u16> {
+        self.columns
+            .iter()
+            .enumerate()
+            .map(|(i, col)| {
+                let row_width = self
+                    .rows
+                    .iter()
+                    .map(|r| {
+                        r.get(i)
+                            .and_then(|v| v.as_ref())
+                            .map(|s| s.chars().count().min(MAX_CELL_LEN))
+                            .unwrap_or(4)
+                    })
+                    .max()
+                    .unwrap_or(0);
+                col.name.chars().count().max(row_width) as u16
+            })
+            .collect()
+    }
+
     /// Move cursor down one row (stays on last row at boundary).
-    #[allow(dead_code)]
     pub fn move_row_down(&mut self) {
-        if self.rows.is_empty() { return; }
+        if self.rows.is_empty() {
+            return;
+        }
         if self.selected_row + 1 < self.rows.len() {
             self.selected_row += 1;
         }
     }
 
     /// Move cursor up one row.
-    #[allow(dead_code)]
     pub fn move_row_up(&mut self) {
         self.selected_row = self.selected_row.saturating_sub(1);
     }
 
     /// Move cursor right one column.
-    #[allow(dead_code)]
     pub fn move_col_right(&mut self) {
-        if self.columns.is_empty() { return; }
+        if self.columns.is_empty() {
+            return;
+        }
         if self.selected_col + 1 < self.columns.len() {
             self.selected_col += 1;
         }
     }
 
     /// Move cursor left one column.
-    #[allow(dead_code)]
     pub fn move_col_left(&mut self) {
         self.selected_col = self.selected_col.saturating_sub(1);
     }
 
     /// Returns the value of the currently selected cell, if any.
-    #[allow(dead_code)]
     pub fn current_cell_value(&self) -> Option<&str> {
         self.rows
             .get(self.selected_row)?
@@ -165,13 +175,11 @@ impl RecordsState {
     }
 
     /// Returns the name of the currently selected column, if any.
-    #[allow(dead_code)]
     pub fn current_col_name(&self) -> Option<&str> {
         self.columns.get(self.selected_col).map(|c| c.name.as_str())
     }
 
     /// Formats the entire selected row as tab-separated values.
-    #[allow(dead_code)]
     pub fn current_row_tsv(&self) -> String {
         self.rows
             .get(self.selected_row)
@@ -344,10 +352,7 @@ mod test {
     #[test]
     fn selected_row_moves_down() {
         let mut state = RecordsState::default();
-        state.rows = vec![
-            vec![Some("a".into())],
-            vec![Some("b".into())],
-        ];
+        state.rows = vec![vec![Some("a".into())], vec![Some("b".into())]];
         state.move_row_down();
         assert_eq!(state.selected_row, 1);
         state.move_row_down(); // at end, stays
@@ -390,7 +395,9 @@ mod test {
         let mut state = RecordsState::default();
         state.columns = vec![
             crate::db::repo::tables_repo::ColumnInfo { name: "id".into() },
-            crate::db::repo::tables_repo::ColumnInfo { name: "name".into() },
+            crate::db::repo::tables_repo::ColumnInfo {
+                name: "name".into(),
+            },
         ];
         state.rows = vec![vec![Some("1".into()), Some("alice".into())]];
         state.selected_col = 1;
@@ -402,5 +409,22 @@ mod test {
         let mut state = RecordsState::default();
         state.rows = vec![vec![Some("1".into()), None, Some("foo".into())]];
         assert_eq!(state.current_row_tsv(), "1\tNULL\tfoo");
+    }
+
+    #[test]
+    fn table_column_widths_follow_visible_content_with_cap() {
+        let mut state = RecordsState::default();
+        state.columns = vec![
+            ColumnInfo { name: "id".into() },
+            ColumnInfo {
+                name: "description".into(),
+            },
+        ];
+        state.rows = vec![vec![
+            Some("100".into()),
+            Some("x".repeat(MAX_CELL_LEN + 20)),
+        ]];
+
+        assert_eq!(state.table_column_widths(), vec![3, MAX_CELL_LEN as u16]);
     }
 }

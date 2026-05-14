@@ -16,14 +16,26 @@ const HINTS: &[(&str, &str)] = &[
     ("q", "back"),
 ];
 
+const DEFAULT_DISPLAY_CAP: usize = 48;
+
 /// Renders the full table schema inspect screen.
 pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     let area = frame.area();
-    let chunks = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Fill(1),
-        Constraint::Length(1),
-    ])
+    let show_search = state.search.active || !state.search.query.is_empty();
+    let chunks = Layout::vertical(if show_search {
+        vec![
+            Constraint::Length(1),
+            Constraint::Fill(1),
+            Constraint::Length(3),
+            Constraint::Length(1),
+        ]
+    } else {
+        vec![
+            Constraint::Length(1),
+            Constraint::Fill(1),
+            Constraint::Length(1),
+        ]
+    })
     .split(area);
 
     let Some(details) = &state.table_details else {
@@ -37,7 +49,19 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     let context = format!("{}.{}", details.schema, details.name);
     widgets::hintbar::render(frame, chunks[0], HINTS);
     render_body(frame, chunks[1], state);
-    widgets::statusbar::render(frame, chunks[2], &state.mode, &context, "r:rows  /:filter");
+    let status_idx = if show_search {
+        widgets::search::render_search_bar(frame, chunks[2], state);
+        3
+    } else {
+        2
+    };
+    widgets::statusbar::render(
+        frame,
+        chunks[status_idx],
+        &state.mode,
+        &context,
+        "r:rows  /:filter",
+    );
 }
 
 fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -131,13 +155,7 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
         })
         .collect();
 
-    let widths = [
-        Constraint::Fill(2),
-        Constraint::Fill(2),
-        Constraint::Length(5),
-        Constraint::Fill(2),
-        Constraint::Fill(2),
-    ];
+    let widths = inspect_column_widths(&fields).map(Constraint::Length);
 
     let table = Table::new(rows, widths)
         .header(col_header)
@@ -181,4 +199,68 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
             .block(Block::bordered().border_style(Style::new().fg(theme::BG3))),
         body_chunks[2],
     );
+}
+
+fn inspect_column_widths(fields: &[&crate::db::repo::tables_repo::TableField]) -> [u16; 5] {
+    let mut widths = [
+        "COLUMN".len(),
+        "TYPE".len(),
+        "NULL".len(),
+        "CONSTRAINT".len(),
+        "DEFAULT".len(),
+    ];
+
+    for field in fields {
+        widths[0] = widths[0].max(field.name.chars().count());
+        widths[1] = widths[1].max(field.data_type.chars().count());
+        widths[2] = widths[2].max(field.is_nullable.chars().count());
+        widths[3] = widths[3].max(constraint_text_len(&field.constraint));
+        widths[4] = widths[4].max(
+            field
+                .default_value
+                .as_deref()
+                .map(|d| d.chars().count().min(DEFAULT_DISPLAY_CAP))
+                .unwrap_or(1),
+        );
+    }
+
+    widths.map(|w| w as u16)
+}
+
+fn constraint_text_len(constraint: &Option<ConstraintType>) -> usize {
+    match constraint {
+        Some(ConstraintType::PrimaryKey) => "PRIMARY KEY".len(),
+        Some(ConstraintType::Unique) => "UNIQUE".len(),
+        Some(ConstraintType::ForeignKey(t)) => "FK -> ".len() + t.chars().count(),
+        None => 1,
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::db::repo::tables_repo::TableField;
+
+    #[test]
+    fn inspect_widths_use_max_visible_text_not_fill_columns() {
+        let fields = vec![
+            TableField {
+                name: "id".into(),
+                data_type: "bigint".into(),
+                is_nullable: "NO".into(),
+                constraint: Some(ConstraintType::PrimaryKey),
+                default_value: Some("nextval('bun_migrations_id_seq')".into()),
+            },
+            TableField {
+                name: "migrated_at".into(),
+                data_type: "timestamp with time zone".into(),
+                is_nullable: "NO".into(),
+                constraint: None,
+                default_value: Some("CURRENT_TIMESTAMP".into()),
+            },
+        ];
+        let refs: Vec<&TableField> = fields.iter().collect();
+
+        assert_eq!(inspect_column_widths(&refs), [11, 24, 4, 11, 32]);
+    }
 }

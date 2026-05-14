@@ -23,11 +23,21 @@ const HINTS: &[(&str, &str)] = &[
 /// Renders the split schema+table view.
 pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     let area = frame.area();
-    let chunks = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Fill(1),
-        Constraint::Length(1),
-    ])
+    let show_search = state.search.active || !state.search.query.is_empty();
+    let chunks = Layout::vertical(if show_search {
+        vec![
+            Constraint::Length(1),
+            Constraint::Fill(1),
+            Constraint::Length(3),
+            Constraint::Length(1),
+        ]
+    } else {
+        vec![
+            Constraint::Length(1),
+            Constraint::Fill(1),
+            Constraint::Length(1),
+        ]
+    })
     .split(area);
 
     let context = state
@@ -37,9 +47,15 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
 
     widgets::hintbar::render(frame, chunks[0], HINTS);
     render_split(frame, chunks[1], state);
+    let status_idx = if show_search {
+        widgets::search::render_search_bar(frame, chunks[2], state);
+        3
+    } else {
+        2
+    };
     widgets::statusbar::render(
         frame,
-        chunks[2],
+        chunks[status_idx],
         &state.mode,
         &context,
         "tab:switch  /:filter  ::sql",

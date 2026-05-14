@@ -1,5 +1,5 @@
 use crate::state::app::AppState;
-use crate::state::connection::{ConnectionMeta, HealthStatus};
+use crate::state::connection::ConnectionMeta;
 use crate::ui::{theme, widgets};
 use ratatui::{
     Frame,
@@ -14,7 +14,6 @@ const HINTS: &[(&str, &str)] = &[
     ("↵", "connect"),
     ("e", "edit"),
     ("d", "delete"),
-    ("/", "search"),
     ("?", "help"),
     ("q", "quit"),
 ];
@@ -44,7 +43,6 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
 
 fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
     let metas: Vec<ConnectionMeta> = state.connections.iter().map(ConnectionMeta::from).collect();
-    let health = &state.connect.health;
 
     let header = Row::new(vec![
         Cell::from(" #").style(Style::new().fg(theme::FG4)),
@@ -58,16 +56,9 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
         .iter()
         .enumerate()
         .map(|(i, m)| {
-            let status = health.get(i).cloned().unwrap_or(HealthStatus::Unknown);
-            let (dot, status_str, status_color) = match status {
-                HealthStatus::Live => ("●", "live", theme::GREEN),
-                HealthStatus::Idle => ("○", "idle", theme::YELLOW),
-                HealthStatus::Offline => ("×", "offline", theme::RED),
-                HealthStatus::Unknown => ("·", "—", theme::FG4),
-            };
             let status_cell = Cell::from(Line::from(vec![
-                Span::styled(dot, Style::new().fg(status_color)),
-                Span::styled(format!(" {}", status_str), Style::new().fg(status_color)),
+                Span::styled("·", Style::new().fg(theme::FG4)),
+                Span::styled(" —", Style::new().fg(theme::FG4)),
             ]));
             Row::new(vec![
                 Cell::from(format!(" {}", i + 1)).style(Style::new().fg(theme::FG4)),

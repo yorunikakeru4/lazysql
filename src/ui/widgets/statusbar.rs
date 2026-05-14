@@ -14,8 +14,8 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, mode: &AppMode, context: &st
     let (pill_label, pill_bg) = match mode {
         AppMode::Normal => (" NORMAL ", theme::AQUA),
         AppMode::Insert => (" INSERT ", theme::ORANGE),
+        AppMode::Search => (" SEARCH ", theme::YELLOW),
         AppMode::Command => (" SQL ", theme::YELLOW),
-        AppMode::Visual => (" VISUAL ", theme::PURPLE),
         AppMode::Result => (" RESULT ", theme::BLUE),
     };
 
@@ -45,16 +45,16 @@ mod test {
         let cases = [
             (AppMode::Normal, " NORMAL "),
             (AppMode::Insert, " INSERT "),
+            (AppMode::Search, " SEARCH "),
             (AppMode::Command, " SQL "),
-            (AppMode::Visual, " VISUAL "),
             (AppMode::Result, " RESULT "),
         ];
         for (mode, expected) in cases {
             let label = match mode {
                 AppMode::Normal => " NORMAL ",
                 AppMode::Insert => " INSERT ",
+                AppMode::Search => " SEARCH ",
                 AppMode::Command => " SQL ",
-                AppMode::Visual => " VISUAL ",
                 AppMode::Result => " RESULT ",
             };
             assert_eq!(label, expected);

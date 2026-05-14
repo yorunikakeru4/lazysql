@@ -21,7 +21,8 @@ fn sections_for(screen: &Screen) -> &'static [HelpSection] {
                 ("e", "edit selected"),
                 ("d", "delete selected"),
                 ("↵", "connect"),
-                ("/", "search"),
+                ("j/k", "navigate"),
+                ("?", "help"),
                 ("q", "quit"),
             ],
         }],
@@ -38,9 +39,9 @@ fn sections_for(screen: &Screen) -> &'static [HelpSection] {
             HelpSection {
                 title: "table",
                 entries: &[
-                    ("↵/l", "open rows"),
-                    ("i", "inspect schema"),
+                    ("↵/l", "inspect schema"),
                     ("r", "view rows"),
+                    ("tab", "switch pane"),
                     (":", "SQL command"),
                 ],
             },
@@ -66,12 +67,7 @@ fn sections_for(screen: &Screen) -> &'static [HelpSection] {
             },
             HelpSection {
                 title: "actions",
-                entries: &[
-                    ("yy", "yank row"),
-                    ("y", "yank cell"),
-                    ("v", "visual select"),
-                    ("q", "close"),
-                ],
+                entries: &[("Y", "yank row (TSV)"), ("y", "yank cell"), ("q", "close")],
             },
         ],
     }

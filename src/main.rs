@@ -72,6 +72,7 @@ async fn run(
         if state.sql_input.has_result() {
             if matches!(key.code, KeyCode::Enter | KeyCode::Esc) {
                 state.sql_input.dismiss_result();
+                state.mode = AppMode::Normal;
             }
             continue;
         }
@@ -126,7 +127,7 @@ async fn run(
                 handle_database(key, state, router, terminal, &mut pending_g).await?;
             }
             Some(Screen::Inspect) => handle_inspect(key, state, router, terminal).await?,
-            Some(Screen::Records) => handle_records(key, state, router).await,
+            Some(Screen::Records) => handle_records(key, state, router, &mut pending_g).await,
             None => break,
         }
     }
@@ -146,28 +147,14 @@ async fn handle_sql_editor(
             state.sql_input.reset();
             state.mode = AppMode::Normal;
         }
+        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            execute_sql_editor_query(state, terminal, router).await?;
+        }
         KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            state.sql_input.close();
-            state.sql_input.push_history();
-            let query = state.sql_input.query.trim().to_string();
-            if db::postgres::tables::is_returning_query(&query) {
-                let size = terminal.size()?;
-                match state.execute_sql_for_records(size.height, size.width).await {
-                    Ok(_) => {
-                        state.sql_input.reset();
-                        state.mode = AppMode::Result;
-                        router.push(Screen::Records);
-                    }
-                    Err(e) => {
-                        state.sql_input.result =
-                            Some(state::sql_input::SqlResult::Error(e.to_string()));
-                    }
-                }
-            } else {
-                state.execute_sql_input().await;
-            }
+            execute_sql_editor_query(state, terminal, router).await?;
         }
         KeyCode::Enter => state.sql_input.insert_newline(),
+        KeyCode::Tab => state.sql_input.insert_tab(),
         KeyCode::Backspace => state.sql_input.delete_before(),
         KeyCode::Delete => state.sql_input.delete_at(),
         KeyCode::Left => state.sql_input.move_left(),
@@ -191,12 +178,44 @@ async fn handle_sql_editor(
         KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             state.sql_input.move_line_start();
         }
-        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            state.sql_input.move_line_end();
-        }
         KeyCode::Char(c) => state.sql_input.insert_char(c),
         _ => {}
     }
+    Ok(())
+}
+
+async fn execute_sql_editor_query(
+    state: &mut AppState,
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    router: &mut Router,
+) -> std::io::Result<()> {
+    state.sql_input.close();
+    state.sql_input.push_history();
+    let query = state.sql_input.query.trim().to_string();
+    if query.is_empty() {
+        state.sql_input.reset();
+        state.mode = AppMode::Normal;
+        return Ok(());
+    }
+
+    if db::postgres::tables::is_returning_query(&query) {
+        let size = terminal.size()?;
+        match state.execute_sql_for_records(size.height, size.width).await {
+            Ok(_) => {
+                state.sql_input.reset();
+                state.mode = AppMode::Result;
+                router.push(Screen::Records);
+            }
+            Err(e) => {
+                state.sql_input.result = Some(state::sql_input::SqlResult::Error(e.to_string()));
+                state.mode = AppMode::Result;
+            }
+        }
+    } else {
+        state.execute_sql_input().await;
+        state.mode = AppMode::Result;
+    }
+
     Ok(())
 }
 
@@ -208,8 +227,12 @@ fn handle_search(key: crossterm::event::KeyEvent, state: &mut AppState, router: 
             state.search.reset();
             state.schema_selected = 0;
             state.table_selected = 0;
+            state.mode = AppMode::Normal;
         }
-        KeyCode::Enter => state.search.close(),
+        KeyCode::Enter => {
+            state.search.close();
+            state.mode = AppMode::Normal;
+        }
         KeyCode::Backspace => {
             state.search.query.pop();
             state.clamp_search_selections();
@@ -272,7 +295,31 @@ async fn handle_connect(
         KeyCode::Char('a') => {
             *pending_g = false;
             state.form.reset();
+            state.mode = AppMode::Insert;
             router.push(Screen::AddConnection);
+        }
+        KeyCode::Char('e') => {
+            *pending_g = false;
+            if let Some(config::Connect::Postgres(cfg)) =
+                state.connections.get(state.connect.selected)
+            {
+                state.form = state::connection::FormState::from_postgres_config(
+                    cfg,
+                    Some(state.connect.selected),
+                );
+                state.mode = AppMode::Insert;
+                router.push(Screen::AddConnection);
+            }
+        }
+        KeyCode::Char('d') => {
+            *pending_g = false;
+            if !state.connections.is_empty() {
+                state.connections.remove(state.connect.selected);
+                if state.connect.selected >= state.connections.len() {
+                    state.connect.selected = state.connections.len().saturating_sub(1);
+                }
+                let _ = ConfigStorage::save(&state.connections);
+            }
         }
         KeyCode::Char('l') | KeyCode::Enter => {
             if !state.connections.is_empty()
@@ -298,6 +345,7 @@ fn handle_add_connection(
     match key.code {
         KeyCode::Esc => {
             state.form.reset();
+            state.mode = AppMode::Normal;
             router.pop();
         }
         KeyCode::Tab | KeyCode::Down => state.form.next_field(),
@@ -305,20 +353,36 @@ fn handle_add_connection(
         KeyCode::Backspace => {
             state.form.current_value_mut().pop();
         }
-        KeyCode::Enter => match state.form.to_postgres_config() {
-            Ok(cfg) => {
-                state.form.error = None;
-                state.connections.push(config::Connect::Postgres(cfg));
-                let _ = ConfigStorage::save(&state.connections);
-                state.form.reset();
-                router.pop();
-            }
-            Err(msg) => state.form.error = Some(msg),
-        },
+        KeyCode::Enter => save_connection_form(state, router),
+        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            save_connection_form(state, router);
+        }
         KeyCode::Char(c) => {
             state.form.current_value_mut().push(c);
         }
         _ => {}
+    }
+}
+
+fn save_connection_form(state: &mut AppState, router: &mut Router) {
+    match state.form.to_postgres_config() {
+        Ok(cfg) => {
+            state.form.error = None;
+            if let Some(editing_index) = state.form.editing_index {
+                if editing_index < state.connections.len() {
+                    state.connections[editing_index] = config::Connect::Postgres(cfg);
+                    state.connect.selected = editing_index;
+                }
+            } else {
+                state.connections.push(config::Connect::Postgres(cfg));
+                state.connect.selected = state.connections.len().saturating_sub(1);
+            }
+            let _ = ConfigStorage::save(&state.connections);
+            state.form.reset();
+            state.mode = AppMode::Normal;
+            router.pop();
+        }
+        Err(msg) => state.form.error = Some(msg),
     }
 }
 
@@ -334,6 +398,7 @@ async fn handle_database(
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => {
             state.search.reset();
+            state.mode = AppMode::Normal;
             router.pop();
         }
         KeyCode::Tab => {
@@ -440,7 +505,10 @@ async fn handle_database(
                 }
             }
         }
-        KeyCode::Char('/') => state.search.open(),
+        KeyCode::Char('/') => {
+            state.search.open();
+            state.mode = AppMode::Search;
+        }
         KeyCode::Char(':') | KeyCode::Char('с') => {
             if state.current_db.is_some() {
                 state.sql_input.open();
@@ -463,9 +531,13 @@ async fn handle_inspect(
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
             state.search.reset();
+            state.mode = AppMode::Normal;
             router.pop();
         }
-        KeyCode::Char('/') => state.search.open(),
+        KeyCode::Char('/') => {
+            state.search.open();
+            state.mode = AppMode::Search;
+        }
         KeyCode::Char('r') | KeyCode::Char('s') => {
             if let Some(details) = state.table_details.as_ref() {
                 let schema = details.schema.clone();
@@ -495,6 +567,7 @@ async fn handle_records(
     key: crossterm::event::KeyEvent,
     state: &mut AppState,
     router: &mut Router,
+    pending_g: &mut bool,
 ) {
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => {
@@ -536,6 +609,7 @@ async fn handle_records(
             let tsv = state.records.current_row_tsv();
             let _ = arboard::Clipboard::new().and_then(|mut c| c.set_text(tsv));
         }
+        KeyCode::Char('g') => *pending_g = true,
         _ => {}
     }
 }

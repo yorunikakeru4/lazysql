@@ -159,7 +159,6 @@ impl AppState {
     }
 
     /// Loads full schema details for the selected table into `table_details`.
-    #[allow(dead_code)]
     pub async fn load_table_details(&mut self, schema: &str, table: &str) -> Result<(), DbError> {
         let Some(DbClient::Postgres(repo)) = &self.current_db else {
             return Err(DbError::NotFound("No active connection".to_string()));

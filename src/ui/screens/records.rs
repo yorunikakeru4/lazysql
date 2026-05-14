@@ -1,5 +1,5 @@
 use crate::state::app::AppState;
-use crate::state::records::RecordsSource;
+use crate::state::records::{MAX_CELL_LEN, RecordsSource};
 use crate::ui::{theme, widgets};
 use ratatui::{
     Frame,
@@ -7,8 +7,6 @@ use ratatui::{
     style::Style,
     widgets::{Block, Cell, Paragraph, Row, Table, TableState},
 };
-
-const MAX_CELL: usize = 50;
 
 const HINTS: &[(&str, &str)] = &[
     ("j/k", "row"),
@@ -54,6 +52,11 @@ fn render_table(frame: &mut Frame, area: Rect, state: &AppState) {
         return;
     }
 
+    if records.min_table_width > area.width {
+        render_expanded(frame, area, state);
+        return;
+    }
+
     let header = Row::new(
         records
             .columns
@@ -80,12 +83,7 @@ fn render_table(frame: &mut Frame, area: Rect, state: &AppState) {
                 .iter()
                 .enumerate()
                 .map(|(col_idx, val)| {
-                    let text = val.as_deref().unwrap_or("NULL");
-                    let truncated = if text.len() > MAX_CELL {
-                        format!("{}…", &text[..MAX_CELL])
-                    } else {
-                        text.to_string()
-                    };
+                    let truncated = truncate_cell(val.as_deref().unwrap_or("NULL"));
                     let style = if is_sel_row && col_idx == records.selected_col {
                         Style::new().bg(theme::BG_SEL).fg(theme::ORANGE)
                     } else if is_sel_row {
@@ -101,9 +99,9 @@ fn render_table(frame: &mut Frame, area: Rect, state: &AppState) {
         .collect();
 
     let widths: Vec<Constraint> = records
-        .columns
-        .iter()
-        .map(|_| Constraint::Fill(1))
+        .table_column_widths()
+        .into_iter()
+        .map(|w| Constraint::Length(w.saturating_add(2)))
         .collect();
 
     let title = format!(
@@ -124,4 +122,48 @@ fn render_table(frame: &mut Frame, area: Rect, state: &AppState) {
         .row_highlight_style(Style::new().bg(theme::BG_SEL));
 
     frame.render_stateful_widget(table, area, &mut table_state);
+}
+
+fn render_expanded(frame: &mut Frame, area: Rect, state: &AppState) {
+    let records = &state.records;
+    let mut lines = Vec::new();
+    for (row_idx, row) in records.rows.iter().enumerate() {
+        let record_num = records.offset + row_idx as u64 + 1;
+        lines.push(format!("-[ RECORD {} ]", record_num));
+        for (col_idx, col) in records.columns.iter().enumerate() {
+            let text = row
+                .get(col_idx)
+                .and_then(|value| value.as_deref())
+                .unwrap_or("NULL");
+            lines.push(format!("{} | {}", col.name, truncate_cell(text)));
+        }
+        lines.push(String::new());
+    }
+
+    let title = format!(
+        " {} rows · page {}/{} · expanded ",
+        records.total_count,
+        records.current_page(),
+        records.total_pages()
+    );
+    frame.render_widget(
+        Paragraph::new(lines.join("\n")).block(
+            Block::bordered()
+                .title(title)
+                .border_style(Style::new().fg(theme::BG3)),
+        ),
+        area,
+    );
+}
+
+fn truncate_cell(text: &str) -> String {
+    if text.chars().count() <= MAX_CELL_LEN {
+        return text.to_string();
+    }
+    let boundary = text
+        .char_indices()
+        .nth(MAX_CELL_LEN)
+        .map(|(i, _)| i)
+        .unwrap_or(text.len());
+    format!("{}…", &text[..boundary])
 }

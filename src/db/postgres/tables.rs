@@ -7,7 +7,6 @@ use crate::db::repo::tables_repo::{
 use sqlparser::ast::Statement;
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
-use std::collections::HashMap;
 
 /// Detects if SQL returns rows (SELECT-like) using sqlparser.
 // TODO: this is a heuristic to route to query vs execute; it may misclassify some statements (e.g. DDL with RETURNING), but should be correct for common cases and let DB report errors for edge cases.
@@ -84,45 +83,10 @@ impl Database for PostgresRepo {
         let rows = self
             .client
             .query(
-                "WITH tables_ AS (
-                    SELECT unnest($1::text[]) AS table_name
-                ),
-                columns_ AS (
-                    SELECT
-                    isc.table_name,
-                    isc.column_name,
-                    isc.data_type,
-                    isc.is_nullable,
-                    isc.column_default AS default
-                    FROM tables_ t
-                    JOIN information_schema.columns isc ON isc.table_name = t.table_name
-                ),
-                constraints_ AS (
-                    SELECT
-                    kcu.table_name,
-                    kcu.column_name,
-                    tc.constraint_type,
-                    c2.table_name AS referenced_table
-                    FROM information_schema.key_column_usage kcu
-                    JOIN information_schema.table_constraints tc
-                    ON tc.constraint_name = kcu.constraint_name
-                    LEFT JOIN information_schema.referential_constraints rc
-                    ON rc.constraint_name = tc.constraint_name
-                    LEFT JOIN information_schema.table_constraints c2
-                    ON rc.unique_constraint_name = c2.constraint_name
-                )
-                    SELECT
-                    c.table_name,
-                    c.column_name,
-                    c.data_type,
-                    c.is_nullable,
-                    cons.constraint_type AS constraint,
-                    cons.referenced_table,
-                    c.default
-                        FROM columns_ c
-                        LEFT JOIN constraints_ cons
-                        ON cons.table_name = c.table_name AND cons.column_name = c.column_name
-                        ORDER BY c.table_name, c.column_name;",
+                "SELECT DISTINCT isc.table_name
+                 FROM information_schema.columns isc
+                 WHERE isc.table_name = ANY($1::text[])
+                 ORDER BY isc.table_name;",
                 &[&table_names],
             )
             .await
@@ -135,22 +99,9 @@ impl Database for PostgresRepo {
                 }
             })?;
 
-        let mut tables_info: HashMap<String, Vec<TableField>> = HashMap::new();
-        for el in &rows {
-            let table_name: String = el.get(0);
-            let field = TableField {
-                name: el.get(1),
-                data_type: el.get(2),
-                is_nullable: el.get(3),
-                constraint: parse_constraint(el.get(4), el.get(5)),
-                default_value: el.get(6),
-            };
-            tables_info.entry(table_name).or_default().push(field);
-        }
-
-        let tables = tables_info
+        let tables = rows
             .into_iter()
-            .map(|(name, fields)| Table { name, fields })
+            .map(|row| Table { name: row.get(0) })
             .collect::<Vec<_>>();
 
         Ok(tables)
@@ -324,25 +275,7 @@ impl Database for PostgresRepo {
             .iter()
             .map(|r| {
                 let name: String = r.get(0);
-                let def: String = r.get(1);
-                let is_primary = def.to_uppercase().contains("PRIMARY");
-                let is_unique = def.to_uppercase().contains("UNIQUE") || is_primary;
-                let columns = def
-                    .rfind('(')
-                    .and_then(|s| def.rfind(')').map(|e| (s, e)))
-                    .map(|(s, e)| {
-                        def[s + 1..e]
-                            .split(',')
-                            .map(|c| c.trim().to_string())
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                IndexInfo {
-                    name,
-                    columns,
-                    is_unique,
-                    is_primary,
-                }
+                IndexInfo { name }
             })
             .collect();
 
@@ -484,16 +417,8 @@ mod test {
 
     async fn verify_tables(client: PostgresRepo, table_names: Vec<String>) {
         let tables = client.get_tables(table_names).await.unwrap();
-        let posts = tables.iter().find(|f| f.name == "posts").unwrap();
-        let user_id = posts.fields.iter().find(|f| f.name == "user_id").unwrap();
-        assert_eq!(user_id.data_type, "integer");
-        assert_eq!(user_id.is_nullable, "NO");
-        assert_eq!(
-            user_id.constraint,
-            Some(crate::db::repo::tables_repo::ConstraintType::ForeignKey(
-                "users".to_string()
-            ))
-        );
+        assert!(tables.iter().any(|f| f.name == "posts"));
+        assert!(tables.iter().any(|f| f.name == "users"));
     }
 
     #[tokio::test]

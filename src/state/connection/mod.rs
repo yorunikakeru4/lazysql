@@ -3,19 +3,7 @@ pub use form::{FIELD_LABELS, FormState};
 
 use crate::config::Connect;
 
-/// Health of a saved connection (probed on screen entry).
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Default)]
-pub enum HealthStatus {
-    #[default]
-    Unknown,
-    Live,
-    Idle,
-    Offline,
-}
-
 /// Display-only, database-agnostic view of a connection config.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ConnectionMeta {
     pub name: String,
@@ -30,9 +18,10 @@ impl From<&Connect> for ConnectionMeta {
     fn from(c: &Connect) -> Self {
         match c {
             Connect::Postgres(cfg) => ConnectionMeta {
-                name: cfg.name.clone().unwrap_or_else(|| {
-                    format!("{}:{}/{}", cfg.host, cfg.port, cfg.db_name)
-                }),
+                name: cfg
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("{}:{}/{}", cfg.host, cfg.port, cfg.db_name)),
                 host: cfg.host.clone(),
                 port: cfg.port,
                 db_name: cfg.db_name.clone(),
@@ -44,7 +33,6 @@ impl From<&Connect> for ConnectionMeta {
 }
 
 /// Which pane has focus in the Database split view.
-#[allow(dead_code)]
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum ActivePane {
     #[default]
@@ -56,8 +44,6 @@ pub enum ActivePane {
 pub struct ConnectState {
     pub selected: usize,
     pub error: Option<String>,
-    #[allow(dead_code)]
-    pub health: Vec<HealthStatus>,
 }
 
 impl ConnectState {
@@ -103,11 +89,6 @@ mod test {
         state.select_next(0);
         state.select_prev(0);
         assert_eq!(state.selected, 0);
-    }
-
-    #[test]
-    fn health_default_is_unknown() {
-        assert_eq!(HealthStatus::default(), HealthStatus::Unknown);
     }
 
     #[test]

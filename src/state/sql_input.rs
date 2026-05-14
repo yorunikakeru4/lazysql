@@ -22,7 +22,6 @@ pub struct SqlInputState {
     pub history_idx: Option<usize>,
 }
 
-#[allow(dead_code)]
 impl SqlInputState {
     /// Activates the SQL input bar.
     pub fn open(&mut self) {
@@ -58,6 +57,13 @@ impl SqlInputState {
     /// Insert newline at cursor_pos.
     pub fn insert_newline(&mut self) {
         self.insert_char('\n');
+    }
+
+    /// Inserts one SQL editor tab stop at the cursor.
+    pub fn insert_tab(&mut self) {
+        const TAB_SPACES: &str = "    ";
+        self.query.insert_str(self.cursor_pos, TAB_SPACES);
+        self.cursor_pos += TAB_SPACES.len();
     }
 
     /// Delete char before cursor (Backspace).
@@ -114,8 +120,7 @@ impl SqlInputState {
             return;
         }
         let new_col = col.min(lines[line + 1].len());
-        self.cursor_pos =
-            lines[..line + 1].iter().map(|l| l.len() + 1).sum::<usize>() + new_col;
+        self.cursor_pos = lines[..line + 1].iter().map(|l| l.len() + 1).sum::<usize>() + new_col;
     }
 
     /// Move cursor to the start of the current line.
@@ -271,6 +276,16 @@ mod test {
         s.insert_char('b');
         assert_eq!(s.query, "a\nb");
         assert_eq!(s.cursor_pos, 3);
+    }
+
+    #[test]
+    fn insert_tab_inserts_four_spaces_at_cursor() {
+        let mut s = SqlInputState::default();
+        s.query = "SELECTFROM".into();
+        s.cursor_pos = "SELECT".len();
+        s.insert_tab();
+        assert_eq!(s.query, "SELECT    FROM");
+        assert_eq!(s.cursor_pos, "SELECT    ".len());
     }
 
     #[test]
