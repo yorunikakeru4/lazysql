@@ -9,7 +9,7 @@ up:
 
 connect:
     until podman exec postgres_test pg_isready -U test; do sleep 1; done
-    pgcli -h localhost -p 5432 -U test_user -d postgres_test
+    pgcli -h localhost -p 5439 -U test_user -d postgres_test
 
 down:
     podman-compose down -v

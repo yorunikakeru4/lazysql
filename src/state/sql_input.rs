@@ -54,6 +54,15 @@ impl SqlInputState {
         self.cursor_pos += c.len_utf8();
     }
 
+    /// Inserts a character and wraps the current line at a word boundary.
+    pub fn insert_char_wrapped(&mut self, c: char, max_col: usize) {
+        self.insert_char(c);
+        if c == '\n' || max_col == 0 {
+            return;
+        }
+        self.wrap_current_line(max_col);
+    }
+
     /// Insert newline at cursor_pos.
     pub fn insert_newline(&mut self) {
         self.insert_char('\n');
@@ -123,32 +132,6 @@ impl SqlInputState {
         self.cursor_pos = lines[..line + 1].iter().map(|l| l.len() + 1).sum::<usize>() + new_col;
     }
 
-    /// Move cursor to the start of the current line.
-    pub fn move_line_start(&mut self) {
-        let before = &self.query[..self.cursor_pos];
-        self.cursor_pos = before.rfind('\n').map(|i| i + 1).unwrap_or(0);
-    }
-
-    /// Move cursor to the end of the current line.
-    pub fn move_line_end(&mut self) {
-        let after = &self.query[self.cursor_pos..];
-        self.cursor_pos += after.find('\n').unwrap_or(after.len());
-    }
-
-    /// Push current query to history (deduplicated, max 100).
-    pub fn push_history(&mut self) {
-        let q = self.query.trim().to_string();
-        if q.is_empty() {
-            return;
-        }
-        self.history.retain(|h| h != &q);
-        self.history.push(q);
-        if self.history.len() > 100 {
-            self.history.remove(0);
-        }
-        self.history_idx = None;
-    }
-
     /// Load previous history entry (older).
     pub fn history_prev(&mut self) {
         if self.history.is_empty() {
@@ -206,6 +189,63 @@ impl SqlInputState {
         }
         p.min(self.query.len())
     }
+
+    fn wrap_current_line(&mut self, max_col: usize) {
+        let (line_start, line_end) = self.current_line_bounds();
+        let line = &self.query[line_start..line_end];
+        if line.chars().count() <= max_col {
+            return;
+        }
+
+        let Some(break_at) = self.word_wrap_break(line, max_col) else {
+            return;
+        };
+        let absolute_break = line_start + break_at;
+        if self.query[absolute_break..]
+            .chars()
+            .next()
+            .is_some_and(char::is_whitespace)
+        {
+            let next = absolute_break
+                + self.query[absolute_break..]
+                    .chars()
+                    .next()
+                    .map(char::len_utf8)
+                    .unwrap_or(0);
+            self.query.replace_range(absolute_break..next, "\n");
+        } else {
+            self.query.insert(absolute_break, '\n');
+            if self.cursor_pos >= absolute_break {
+                self.cursor_pos += 1;
+            }
+        }
+    }
+
+    fn current_line_bounds(&self) -> (usize, usize) {
+        let before = &self.query[..self.cursor_pos.min(self.query.len())];
+        let line_start = before.rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let after = &self.query[self.cursor_pos.min(self.query.len())..];
+        let line_end = after
+            .find('\n')
+            .map(|i| self.cursor_pos + i)
+            .unwrap_or(self.query.len());
+        (line_start, line_end)
+    }
+
+    fn word_wrap_break(&self, line: &str, max_col: usize) -> Option<usize> {
+        let mut fallback = None;
+        let mut last_space = None;
+        for (char_idx, (byte_idx, ch)) in line.char_indices().enumerate() {
+            if char_idx == max_col {
+                fallback = Some(byte_idx);
+                break;
+            }
+            if ch.is_whitespace() {
+                last_space = Some(byte_idx);
+            }
+        }
+        last_space.or(fallback)
+    }
 }
 
 #[cfg(test)]
@@ -262,9 +302,12 @@ mod test {
     #[test]
     fn insert_char_appends_and_advances_cursor() {
         let mut s = SqlInputState::default();
+        assert_eq!(s.cursor_pos, 0);
         s.insert_char('a');
         s.insert_char('b');
         assert_eq!(s.query, "ab");
+        assert_eq!(s.query, "ab");
+        assert_eq!(s.query.len(), 2);
         assert_eq!(s.cursor_pos, 2);
     }
 
@@ -276,6 +319,28 @@ mod test {
         s.insert_char('b');
         assert_eq!(s.query, "a\nb");
         assert_eq!(s.cursor_pos, 3);
+    }
+
+    #[test]
+    fn insert_char_wrapped_moves_current_word_to_next_line() {
+        let mut s = SqlInputState::default();
+        for c in "select from".chars() {
+            s.insert_char_wrapped(c, 8);
+        }
+
+        assert_eq!(s.query, "select\nfrom");
+        assert_eq!(s.cursor_line_col(), (1, 4));
+    }
+
+    #[test]
+    fn insert_char_wrapped_breaks_long_word_when_no_space_exists() {
+        let mut s = SqlInputState::default();
+        for c in "abcdef".chars() {
+            s.insert_char_wrapped(c, 4);
+        }
+
+        assert_eq!(s.query, "abcd\nef");
+        assert_eq!(s.cursor_line_col(), (1, 2));
     }
 
     #[test]
@@ -369,43 +434,6 @@ mod test {
         s.cursor_pos = 1; // 'b'
         s.move_down();
         assert_eq!(s.cursor_pos, 5); // 'e' (col 1 in "de")
-    }
-
-    #[test]
-    fn move_line_start_goes_to_line_beginning() {
-        let mut s = SqlInputState::default();
-        s.query = "abc\nde".into();
-        s.cursor_pos = 5;
-        s.move_line_start();
-        assert_eq!(s.cursor_pos, 4); // start of "de"
-    }
-
-    #[test]
-    fn move_line_end_goes_to_line_end() {
-        let mut s = SqlInputState::default();
-        s.query = "abc\nde".into();
-        s.cursor_pos = 4;
-        s.move_line_end();
-        assert_eq!(s.cursor_pos, 6); // end of "de"
-    }
-
-    #[test]
-    fn history_records_on_push() {
-        let mut s = SqlInputState::default();
-        s.query = "SELECT 1".into();
-        s.cursor_pos = 8;
-        s.push_history();
-        assert_eq!(s.history, vec!["SELECT 1"]);
-    }
-
-    #[test]
-    fn history_deduplicates() {
-        let mut s = SqlInputState::default();
-        s.query = "SELECT 1".into();
-        s.push_history();
-        s.query = "SELECT 1".into();
-        s.push_history();
-        assert_eq!(s.history.len(), 1);
     }
 
     #[test]

@@ -185,7 +185,12 @@ impl AppState {
             .iter()
             .position(|i| *i == self.connect.selected)
             .unwrap_or(0);
-        self.connect.selected = indices[current.saturating_sub(1)];
+        let prev = if current == 0 {
+            indices.len() - 1
+        } else {
+            current - 1
+        };
+        self.connect.selected = indices[prev];
     }
 
     /// Selects the first visible connection, if any.
@@ -248,13 +253,24 @@ impl AppState {
             return Err(DbError::NotFound(msg));
         }
         match &self.connections[idx] {
-            Postgres(_) => match DbClient::new(self.connections[idx].clone()).await {
-                Ok(client) => {
+            Postgres(_) => match tokio::time::timeout(
+                CONNECTION_STATUS_TIMEOUT,
+                DbClient::new(self.connections[idx].clone()),
+            )
+            .await
+            {
+                Err(_) => {
+                    let e = DbError::ConnectionTimeout(CONNECTION_STATUS_TIMEOUT);
+                    self.connect.error = Some(e.to_string());
+                    self.set_connection_status(idx, ConnectionStatus::Offline);
+                    Err(e)
+                }
+                Ok(Ok(client)) => {
                     self.current_db = Some(client);
                     self.set_connection_status(idx, ConnectionStatus::Online);
                     Ok(())
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     self.connect.error = Some(e.to_string());
                     self.set_connection_status(idx, ConnectionStatus::Offline);
                     Err(e)
@@ -317,7 +333,7 @@ impl AppState {
                 });
             }
             Err(e) => {
-                self.sql_input.result = Some(SqlResult::Error(e.to_string()));
+                self.sql_input.result = Some(SqlResult::Error(format_sql_error(&e)));
             }
         }
     }
@@ -439,6 +455,36 @@ impl AppState {
         }
 
         Ok(())
+    }
+}
+
+/// Formats database errors for the SQL result popup.
+pub(crate) fn format_sql_error(error: &DbError) -> String {
+    match error {
+        DbError::Postgres(error) => {
+            let Some(db_error) = error.as_db_error() else {
+                return format!("SQL error: {}", error);
+            };
+            let mut lines = vec![format!("SQL error: {}", db_error.message())];
+            if let Some(position) = db_error.position() {
+                lines.push(format!("Position: {:?}", position));
+            }
+            if let Some(detail) = db_error.detail() {
+                lines.push(format!("Detail: {}", detail));
+            }
+            if let Some(hint) = db_error.hint() {
+                lines.push(format!("Hint: {}", hint));
+            }
+            lines.push(format!("SQLSTATE: {}", db_error.code().code()));
+            lines.join("\n")
+        }
+        DbError::NotFound(message) => format!("SQL error: {}", message),
+        DbError::ConnectionTimeout(timeout) => {
+            format!(
+                "SQL error: connection timed out after {}s",
+                timeout.as_secs()
+            )
+        }
     }
 }
 
@@ -644,6 +690,28 @@ mod test {
         state.clamp_connection_selection();
 
         assert_eq!(state.connect.selected, 2);
+    }
+
+    #[test]
+    fn select_prev_filtered_connection_wraps_to_last_visible_match() {
+        let mut state = AppState::new(vec![
+            named_pg_connect("Local Dev"),
+            named_pg_connect("Staging"),
+            named_pg_connect("Production"),
+        ]);
+        state.search.query = "i".to_string();
+        state.connect.selected = 1;
+
+        state.select_prev_filtered_connection();
+
+        assert_eq!(state.connect.selected, 2);
+    }
+
+    #[test]
+    fn sql_error_message_keeps_context_without_driver_noise() {
+        let message = format_sql_error(&DbError::NotFound("Empty query".to_string()));
+
+        assert_eq!(message, "SQL error: Empty query");
     }
 
     #[test]

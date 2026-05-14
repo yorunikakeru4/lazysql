@@ -175,18 +175,10 @@ async fn handle_sql_editor(
         }
         KeyCode::Up => state.sql_input.move_up(),
         KeyCode::Down => state.sql_input.move_down(),
-        KeyCode::Home => state.sql_input.move_line_start(),
-        KeyCode::End => state.sql_input.move_line_end(),
-        KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            state.sql_input.history_prev();
+        KeyCode::Char(c) => {
+            let max_col = sql_editor_text_width(terminal.size()?.width);
+            state.sql_input.insert_char_wrapped(c, max_col);
         }
-        KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            state.sql_input.history_next();
-        }
-        KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            state.sql_input.move_line_start();
-        }
-        KeyCode::Char(c) => state.sql_input.insert_char(c),
         _ => {}
     }
     Ok(())
@@ -198,7 +190,6 @@ async fn execute_sql_editor_query(
     router: &mut Router,
 ) -> std::io::Result<()> {
     state.sql_input.close();
-    state.sql_input.push_history();
     let query = state.sql_input.query.trim().to_string();
     if query.is_empty() {
         state.sql_input.reset();
@@ -215,7 +206,9 @@ async fn execute_sql_editor_query(
                 router.push(Screen::Records);
             }
             Err(e) => {
-                state.sql_input.result = Some(state::sql_input::SqlResult::Error(e.to_string()));
+                state.sql_input.result = Some(state::sql_input::SqlResult::Error(
+                    state::app::format_sql_error(&e),
+                ));
                 state.mode = AppMode::Result;
             }
         }
@@ -225,6 +218,11 @@ async fn execute_sql_editor_query(
     }
 
     Ok(())
+}
+
+fn sql_editor_text_width(terminal_width: u16) -> usize {
+    let popup_width = terminal_width.saturating_mul(70) / 100;
+    popup_width.saturating_sub(7).max(1) as usize
 }
 
 // ─── Search ──────────────────────────────────────────────────────────────────
@@ -551,7 +549,7 @@ async fn handle_database(
             state.search.open();
             state.mode = AppMode::Search;
         }
-        KeyCode::Char(':') | KeyCode::Char('с') => {
+        KeyCode::Char(':') | KeyCode::Char('c') => {
             if state.current_db.is_some() {
                 state.sql_input.open();
                 state.mode = AppMode::Command;

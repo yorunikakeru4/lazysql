@@ -1,9 +1,15 @@
 use crate::{config::Connect, db::postgres::init::PostgresRepo};
+use std::time::Duration;
 
+/// Error type shared by database backends.
 #[derive(Debug)]
 pub enum DbError {
+    /// Error returned by the PostgreSQL driver.
     Postgres(tokio_postgres::Error),
+    /// Requested item was not found or cannot be loaded.
     NotFound(String),
+    /// Database connection attempt exceeded the configured timeout.
+    ConnectionTimeout(Duration),
     // ConfigError(String),
 }
 impl std::fmt::Display for DbError {
@@ -11,15 +17,20 @@ impl std::fmt::Display for DbError {
         match self {
             DbError::Postgres(e) => write!(f, "Postgres error: {}", e),
             DbError::NotFound(msg) => write!(f, "Not found: {}", msg),
-            // DbError::ConfigError(msg) => write!(f, "Configuration error: {}", msg),
+            DbError::ConnectionTimeout(timeout) => {
+                write!(f, "Connection timed out after {}s", timeout.as_secs())
+            } // DbError::ConfigError(msg) => write!(f, "Configuration error: {}", msg),
         }
     }
 }
+/// Active database client.
 #[derive(Debug)]
 pub enum DbClient {
+    /// PostgreSQL client implementation.
     Postgres(PostgresRepo),
 }
 impl DbClient {
+    /// Opens a database client from a saved connection config.
     pub async fn new(connect_config: Connect) -> Result<Self, DbError> {
         match connect_config {
             Connect::Postgres(cfg) => {

@@ -35,7 +35,7 @@ mod test {
             port: std::env::var("TEST_DB_PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())
-                .unwrap_or(5432),
+                .unwrap_or(5439),
             password: std::env::var("TEST_DB_PASSWORD").ok(),
         }
     }

@@ -67,12 +67,16 @@ impl ConnectState {
         self.selected = (self.selected + 1) % len;
     }
 
-    /// Moves selection up, stopping at index 0.
+    /// Moves selection up, wrapping around when reaching the start.
     pub fn select_prev(&mut self, len: usize) {
         if len == 0 {
             return;
         }
-        self.selected = self.selected.saturating_sub(1);
+        self.selected = if self.selected == 0 {
+            len - 1
+        } else {
+            self.selected - 1
+        };
     }
 }
 
@@ -89,10 +93,10 @@ mod test {
     }
 
     #[test]
-    fn select_prev_stops_at_zero() {
+    fn select_prev_wraps_from_zero_to_last_item() {
         let mut state = ConnectState::default();
         state.select_prev(3);
-        assert_eq!(state.selected, 0);
+        assert_eq!(state.selected, 2);
     }
 
     #[test]
