@@ -72,7 +72,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
 
         if is_focused && i != 5 {
             let inner = chunks[i];
-            let cursor_x = inner.x + 1 + state.form.values[i].len() as u16;
+            let cursor_x = inner.x + 1 + state.form.values[i].chars().count() as u16;
             let cursor_y = inner.y + 1;
             let max_x = inner.x + inner.width.saturating_sub(2);
             frame.set_cursor_position(Position::new(cursor_x.min(max_x), cursor_y));

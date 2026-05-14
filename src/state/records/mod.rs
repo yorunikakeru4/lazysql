@@ -61,7 +61,7 @@ impl RecordsState {
             return 1;
         }
         let rpp = self.rows_per_page as u64;
-        self.total_count.div_ceil(rpp)
+        self.total_count.div_ceil(rpp).max(1)
     }
 
     /// Returns true if there's a next page.
