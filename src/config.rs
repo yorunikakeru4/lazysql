@@ -9,6 +9,7 @@ pub enum Connect {
 
 #[derive(Debug, Clone)]
 pub struct PostgresConfig {
+    pub name: Option<String>,
     pub host: String,
     pub user: String,
     pub db_name: String,

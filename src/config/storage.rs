@@ -12,6 +12,8 @@ struct StoredConfig {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct StoredConnection {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
     host: String,
     user: String,
     db_name: String,
@@ -54,6 +56,7 @@ impl ConfigStorage {
             .into_iter()
             .map(|c| {
                 Connect::Postgres(PostgresConfig {
+                    name: c.name,
                     host: c.host,
                     user: c.user,
                     db_name: c.db_name,
@@ -73,6 +76,7 @@ impl ConfigStorage {
                 .iter()
                 .map(|c| match c {
                     Connect::Postgres(cfg) => StoredConnection {
+                        name: cfg.name.clone(),
                         host: cfg.host.clone(),
                         user: cfg.user.clone(),
                         db_name: cfg.db_name.clone(),
@@ -107,6 +111,7 @@ mod test {
         let path = dir.path().join("config.toml");
 
         let config = Connect::Postgres(PostgresConfig {
+            name: None,
             host: "localhost".to_string(),
             user: "alice".to_string(),
             db_name: "mydb".to_string(),
@@ -132,6 +137,7 @@ mod test {
         let path = dir.path().join("config.toml");
 
         let config = Connect::Postgres(PostgresConfig {
+            name: None,
             host: "db".to_string(),
             user: "bob".to_string(),
             db_name: "prod".to_string(),
