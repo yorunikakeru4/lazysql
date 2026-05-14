@@ -19,7 +19,7 @@ pub fn render(frame: &mut Frame, state: &AppState, router: &Router) {
     }
 
     if state.sql_input.active {
-        widgets::sql::render_input_bar(frame, state);
+        widgets::sql_editor::render(frame, state);
     }
     if state.sql_input.has_result() {
         widgets::sql::render_result_popup(frame, state);
