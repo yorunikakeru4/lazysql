@@ -432,6 +432,35 @@ impl AppState {
         Ok(())
     }
 
+    /// Moves the record cursor down, auto-advancing to the next page at the row boundary.
+    pub async fn move_record_down(&mut self, reset_col: bool) {
+        if self.records.selected_row + 1 >= self.records.rows.len() && self.records.has_next_page()
+        {
+            self.records.next_page();
+            let _ = self.fetch_records_page().await;
+            self.records.selected_row = 0;
+        } else {
+            self.records.move_row_down();
+        }
+        if reset_col {
+            self.records.selected_col = 0;
+        }
+    }
+
+    /// Moves the record cursor up, auto-going to the previous page at the row boundary.
+    pub async fn move_record_up(&mut self, reset_col: bool) {
+        if self.records.selected_row == 0 && self.records.has_prev_page() {
+            self.records.prev_page();
+            let _ = self.fetch_records_page().await;
+            self.records.selected_row = self.records.rows.len().saturating_sub(1);
+        } else {
+            self.records.move_row_up();
+        }
+        if reset_col {
+            self.records.selected_col = 0;
+        }
+    }
+
     /// Executes the SQL from `sql_input` and loads results into records state for viewing.
     pub async fn execute_sql_for_records(
         &mut self,
