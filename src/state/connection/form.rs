@@ -30,9 +30,9 @@ impl FormState {
         self.focused = (self.focused + 1) % FIELD_COUNT;
     }
 
-    /// Moves focus to the previous field, stopping at 0.
+    /// Moves focus to the previous field, wrapping around.
     pub fn prev_field(&mut self) {
-        self.focused = self.focused.saturating_sub(1);
+        self.focused = (self.focused + FIELD_COUNT - 1) % FIELD_COUNT;
     }
 
     /// Returns a mutable reference to the currently focused field's buffer.
@@ -189,10 +189,10 @@ mod test {
     }
 
     #[test]
-    fn prev_field_stops_at_zero() {
+    fn prev_field_wraps() {
         let mut f = FormState::default();
         f.prev_field();
-        assert_eq!(f.focused, 0);
+        assert_eq!(f.focused, FIELD_COUNT - 1);
     }
 
     #[test]
