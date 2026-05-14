@@ -401,20 +401,7 @@ async fn handle_database(
                 state.select_prev_filtered_table(&schema);
             }
         }
-        KeyCode::Char('G') => {
-            if state.active_pane == ActivePane::Schemas {
-                let len = state.filtered_schema_names().len();
-                if len > 0 {
-                    state.schema_selected = len - 1;
-                }
-            } else {
-                let schema = state.selected_schema_name().unwrap_or_default();
-                let len = state.filtered_table_names(&schema).len();
-                if len > 0 {
-                    state.table_selected = len - 1;
-                }
-            }
-        }
+
         KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => {
             if state.active_pane == ActivePane::Schemas {
                 let chosen = state
@@ -490,7 +477,7 @@ async fn handle_inspect(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
 ) -> std::io::Result<()> {
     match key.code {
-        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') | KeyCode::Left => {
             state.search.reset();
             state.mode = AppMode::Normal;
             router.pop();
