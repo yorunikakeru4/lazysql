@@ -43,6 +43,7 @@ pub struct TableRef {
 #[derive(Debug)]
 pub struct Table {
     pub name: String,
+    #[allow(dead_code)]
     pub fields: Vec<TableField>,
 }
 #[derive(Debug)]

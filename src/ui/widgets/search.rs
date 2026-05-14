@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 /// Renders the search bar at `area` and shows the cursor when active.
+#[allow(dead_code)]
 pub(crate) fn render_search_bar(frame: &mut Frame, area: Rect, state: &AppState) {
     let (title, text) = if state.search.active {
         (" / ", format!("{}_", state.search.query))

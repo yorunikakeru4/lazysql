@@ -2,6 +2,7 @@ use crate::db::repo::tables_repo::TableField;
 use crate::state::records::{MAX_CELL_LEN, RecordsState};
 
 /// Truncates a cell value to `MAX_CELL_LEN` characters and appends `...` if needed.
+#[allow(dead_code)]
 fn truncate_cell(s: &str) -> String {
     if s.chars().count() <= MAX_CELL_LEN {
         return s.to_string();
@@ -15,6 +16,7 @@ fn truncate_cell(s: &str) -> String {
 }
 
 /// Formats records as a table with aligned columns.
+#[allow(dead_code)]
 pub(crate) fn format_records_table(records: &RecordsState) -> String {
     const COL_GAP: &str = "   ";
 
@@ -67,6 +69,7 @@ pub(crate) fn format_records_table(records: &RecordsState) -> String {
 }
 
 /// Formats records using the table layout when it fits, otherwise a vertical layout.
+#[allow(dead_code)]
 pub(crate) fn format_records(records: &RecordsState, available_width: u16) -> String {
     if records.min_table_width > available_width {
         return format_records_vertical(records);
@@ -76,6 +79,7 @@ pub(crate) fn format_records(records: &RecordsState, available_width: u16) -> St
 }
 
 /// Formats records as vertical per-record field/value blocks.
+#[allow(dead_code)]
 pub(crate) fn format_records_vertical(records: &RecordsState) -> String {
     if records.columns.is_empty() {
         return "No data".to_string();
