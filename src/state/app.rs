@@ -178,7 +178,11 @@ impl AppState {
 
     /// Loads records for the currently selected table.
     /// `terminal_height` is used to pick the right `rows_per_page`.
-    pub async fn load_table_records(&mut self, terminal_height: u16) -> Result<(), DbError> {
+    pub async fn load_table_records(
+        &mut self,
+        terminal_height: u16,
+        terminal_width: u16,
+    ) -> Result<(), DbError> {
         let Some(table) = &self.loaded_table else {
             return Err(DbError::NotFound("No table loaded".to_string()));
         };
@@ -193,11 +197,21 @@ impl AppState {
         self.records = RecordsState::for_table(schema.clone(), table_name.clone());
         self.records.rows_per_page = table_rpp;
 
-        {
-            let Some(DbClient::Postgres(repo)) = &self.current_db else {
-                return Err(DbError::NotFound("No active connection".to_string()));
-            };
-            let result = repo.fetch_rows(&schema, &table_name, table_rpp, 0).await?;
+        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+            return Err(DbError::NotFound("No active connection".to_string()));
+        };
+
+        let result = repo.fetch_rows(&schema, &table_name, table_rpp, 0).await?;
+        self.records.update_from_result(result);
+
+        let actual_rows_per_page = self
+            .records
+            .rows_per_page_for_terminal(terminal_height, terminal_width);
+        if actual_rows_per_page != self.records.rows_per_page {
+            self.records.rows_per_page = actual_rows_per_page;
+            let result = repo
+                .fetch_rows(&schema, &table_name, actual_rows_per_page, 0)
+                .await?;
             self.records.update_from_result(result);
         }
 
@@ -231,7 +245,11 @@ impl AppState {
     }
 
     /// Executes the SQL from `sql_input` and loads results into records state for viewing.
-    pub async fn execute_sql_for_records(&mut self, terminal_height: u16) -> Result<(), DbError> {
+    pub async fn execute_sql_for_records(
+        &mut self,
+        terminal_height: u16,
+        terminal_width: u16,
+    ) -> Result<(), DbError> {
         let query = self.sql_input.query.trim().to_string();
         if query.is_empty() {
             return Err(DbError::NotFound("Empty query".to_string()));
@@ -242,15 +260,31 @@ impl AppState {
         self.records = RecordsState::for_query(query.clone());
         self.records.rows_per_page = table_rpp;
 
-        {
-            let Some(DbClient::Postgres(repo)) = &self.current_db else {
-                return Err(DbError::NotFound("No active connection".to_string()));
-            };
+        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+            return Err(DbError::NotFound("No active connection".to_string()));
+        };
+
+        let result = execute_sql_rows(
+            repo,
+            &query,
+            SqlPage {
+                limit: table_rpp,
+                offset: 0,
+            },
+        )
+        .await?;
+        self.records.update_from_result(result);
+
+        let actual_rows_per_page = self
+            .records
+            .rows_per_page_for_terminal(terminal_height, terminal_width);
+        if actual_rows_per_page != self.records.rows_per_page {
+            self.records.rows_per_page = actual_rows_per_page;
             let result = execute_sql_rows(
                 repo,
                 &query,
                 SqlPage {
-                    limit: table_rpp,
+                    limit: actual_rows_per_page,
                     offset: 0,
                 },
             )

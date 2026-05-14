@@ -21,7 +21,6 @@ struct StoredConnection {
 
 pub struct ConfigStorage;
 
-#[allow(dead_code)]
 impl ConfigStorage {
     /// Returns the default config file path: `~/.config/lazysql/config.toml`.
     /// Falls back to `./.config/lazysql/config.toml` when `HOME` is unset.

@@ -122,6 +122,21 @@ impl RecordsState {
         // Add borders (2) + some padding
         self.min_table_width = width.saturating_add(4);
     }
+
+    /// Returns the number of rows that fit in the current terminal layout.
+    pub fn rows_per_page_for_terminal(&self, terminal_height: u16, terminal_width: u16) -> u16 {
+        if self.columns.is_empty() {
+            return 1;
+        }
+
+        if self.min_table_width > terminal_width {
+            let content_height = terminal_height.saturating_sub(5).max(1);
+            let row_height = (self.columns.len() as u16).saturating_add(1).max(1);
+            return (content_height / row_height).max(1);
+        }
+
+        terminal_height.saturating_sub(7).max(1)
+    }
 }
 
 #[cfg(test)]
@@ -237,5 +252,31 @@ mod test {
         assert_eq!(state.columns.len(), 1);
         assert_eq!(state.rows.len(), 1);
         assert_eq!(state.total_count, 1);
+    }
+
+    #[test]
+    fn rows_per_page_shrinks_for_vertical_layout() {
+        let mut state = RecordsState {
+            columns: (0..12)
+                .map(|i| ColumnInfo {
+                    name: format!("col_{i}"),
+                })
+                .collect(),
+            ..Default::default()
+        };
+        state.min_table_width = 200;
+
+        assert_eq!(state.rows_per_page_for_terminal(57, 80), 4);
+    }
+
+    #[test]
+    fn rows_per_page_uses_table_layout_when_it_fits() {
+        let mut state = RecordsState {
+            columns: vec![ColumnInfo { name: "id".into() }],
+            ..Default::default()
+        };
+        state.min_table_width = 20;
+
+        assert_eq!(state.rows_per_page_for_terminal(57, 80), 50);
     }
 }
