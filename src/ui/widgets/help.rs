@@ -14,16 +14,26 @@ struct HelpSection {
 
 fn sections_for(screen: &Screen) -> &'static [HelpSection] {
     match screen {
-        Screen::Connect | Screen::AddConnection => &[HelpSection {
+        Screen::Connect => &[HelpSection {
             title: "connections",
             entries: &[
-                ("a", "add new connection"),
+                ("j/k", "navigate"),
+                ("/", "search"),
+                ("↵/l", "connect"),
+                ("a", "add new"),
                 ("e", "edit selected"),
                 ("d", "delete selected"),
-                ("↵", "connect"),
-                ("j/k", "navigate"),
-                ("?", "help"),
+                ("r", "refresh statuses"),
                 ("q", "quit"),
+            ],
+        }],
+        Screen::AddConnection => &[HelpSection {
+            title: "form",
+            entries: &[
+                ("Tab/↓", "next field"),
+                ("BackTab/↑", "prev field"),
+                ("↵ / Ctrl+S", "save"),
+                ("Esc", "cancel"),
             ],
         }],
         Screen::Database => &[
@@ -32,42 +42,47 @@ fn sections_for(screen: &Screen) -> &'static [HelpSection] {
                 entries: &[
                     ("j/k", "move cursor"),
                     ("tab", "switch pane"),
-                    ("h/Esc", "back"),
+                    ("h/q/Esc", "back"),
                     ("/", "filter"),
                 ],
             },
             HelpSection {
                 title: "table",
                 entries: &[
-                    ("↵/l", "inspect schema"),
+                    ("↵/l", "open / inspect"),
                     ("r", "view rows"),
-                    ("tab", "switch pane"),
-                    (":", "SQL command"),
+                    (":/c", "SQL editor"),
+                ],
+            },
+            HelpSection {
+                title: "SQL editor",
+                entries: &[
+                    ("Ctrl+E/↵", "run query"),
+                    ("Ctrl+↑/↓", "history"),
+                    ("Esc", "close editor"),
                 ],
             },
         ],
         Screen::Inspect => &[HelpSection {
             title: "inspect",
             entries: &[
-                ("r", "view rows"),
-                ("s", "sample 100"),
+                ("r/s", "view rows"),
                 ("/", "filter columns"),
-                ("q", "back"),
+                ("q/Esc", "back"),
             ],
         }],
         Screen::Records => &[
             HelpSection {
                 title: "navigate",
                 entries: &[
-                    ("j/k", "row or field"),
-                    ("h/l", "field or row"),
+                    ("j/k", "row / field"),
+                    ("h/l", "field / row"),
                     ("n/p", "next/prev page"),
-                    ("G", "last row"),
                 ],
             },
             HelpSection {
                 title: "actions",
-                entries: &[("q", "close")],
+                entries: &[("q/Esc", "close")],
             },
         ],
     }
