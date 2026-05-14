@@ -32,14 +32,43 @@
 
 ## Быстрый старт
 
-```bash
-# Собрать и запустить
-cargo build --release
-just dev
+### С `just` (рекомендуется)
 
-# Запустить тесты (поднимает тестовый PostgreSQL через Podman)
-just test
+```bash
+just dev      # собрать и запустить
+just test     # поднять тестовый PostgreSQL, прогнать тесты, снести контейнер
+just up       # поднять тестовую БД в фоне (без запуска тестов)
+just down     # остановить и удалить тестовую БД
+just connect  # подключиться к тестовой БД через pgcli
+just build    # release-сборка
 ```
+
+### Без `just`
+
+**Запуск:**
+```bash
+cargo run --release
+```
+
+**Unit-тесты** (без базы данных):
+```bash
+cargo test
+```
+
+**Интеграционные тесты** (требуют запущенного PostgreSQL):
+```bash
+# 1. Поднять тестовую БД
+podman-compose up --build -d
+until podman exec postgres_test pg_isready -U test; do sleep 1; done
+
+# 2. Запустить тесты с паролем из контейнера
+TEST_DB_PASSWORD=$(podman exec postgres_test printenv POSTGRES_PASSWORD) cargo test -v
+
+# 3. Убрать контейнер
+podman-compose down -v
+```
+
+Тестовая БД: `localhost:5439`, пользователь `test_user`, база `db_test`.
 
 Конфиг хранится в `~/.config/lazysql/config.toml` и редактируется прямо из TUI.
 
