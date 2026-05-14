@@ -21,6 +21,44 @@ pub fn is_returning_query(sql: &str) -> bool {
     matches!(stmt, Statement::Query(_) | Statement::Explain { .. })
 }
 
+/// Builds (count_sql, data_sql) for pagination.
+///
+/// CTE queries (`WITH ... SELECT`) cannot be wrapped in a subquery — PostgreSQL
+/// forbids `SELECT COUNT(*) FROM (WITH ...) AS s`. Instead we append the query
+/// body as an extra CTE and select from that.
+fn build_pagination_sqls(sql: &str, limit: u16, offset: u64) -> (String, String) {
+    if let Some((with_str, body)) = try_extract_cte(sql) {
+        let count_sql = format!(
+            "{}, _lazysql_count AS ({}) SELECT COUNT(*) FROM _lazysql_count",
+            with_str, body
+        );
+        let data_sql = format!(
+            "{}, _lazysql_data AS ({}) SELECT * FROM _lazysql_data LIMIT {} OFFSET {}",
+            with_str, body, limit, offset
+        );
+        return (count_sql, data_sql);
+    }
+    (
+        format!("SELECT COUNT(*) FROM ({}) AS _subq", sql),
+        format!(
+            "SELECT * FROM ({}) AS _subq LIMIT {} OFFSET {}",
+            sql, limit, offset
+        ),
+    )
+}
+
+/// If `sql` is a CTE query, returns `(with_clause_str, body_str)` with the
+/// WITH clause separated from the final SELECT so each can be recombined.
+fn try_extract_cte(sql: &str) -> Option<(String, String)> {
+    let dialect = PostgreSqlDialect {};
+    let stmts = Parser::parse_sql(&dialect, sql).ok()?;
+    let Statement::Query(mut query) = stmts.into_iter().next()? else {
+        return None;
+    };
+    let with = query.with.take()?;
+    Some((format!("{}", with), format!("{}", query)))
+}
+
 impl PostgresRepo {
     async fn fetch_query_rows(
         &self,
@@ -44,18 +82,13 @@ impl PostgresRepo {
             });
         };
 
-        let count_sql = format!("SELECT COUNT(*) FROM ({}) AS _subq", sql);
+        let (count_sql, data_sql) = build_pagination_sqls(sql, page.limit, page.offset);
         let count_row = self
             .client
             .query_one(&count_sql, &[])
             .await
             .map_err(DbError::Postgres)?;
         let total_count: i64 = count_row.get(0);
-
-        let data_sql = format!(
-            "SELECT * FROM ({}) AS _subq LIMIT {} OFFSET {}",
-            sql, page.limit, page.offset
-        );
 
         let stmt = self
             .client
@@ -72,7 +105,7 @@ impl PostgresRepo {
         Ok(FetchRowsResult {
             columns,
             rows: rows_to_data(&rows),
-            total_count: total_count as u64,
+            total_count: u64::try_from(total_count).unwrap_or(0),
         })
     }
 }
@@ -197,7 +230,7 @@ impl Database for PostgresRepo {
         Ok(FetchRowsResult {
             columns,
             rows: data,
-            total_count: total_count as u64,
+            total_count: u64::try_from(total_count).unwrap_or(0),
         })
     }
 

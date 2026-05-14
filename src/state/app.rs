@@ -168,10 +168,10 @@ impl AppState {
         if indices.is_empty() {
             return;
         }
-        let current = indices
-            .iter()
-            .position(|i| *i == self.connect.selected)
-            .unwrap_or(0);
+        let Some(current) = indices.iter().position(|i| *i == self.connect.selected) else {
+            self.connect.selected = indices[0];
+            return;
+        };
         self.connect.selected = indices[(current + 1) % indices.len()];
     }
 
@@ -181,10 +181,10 @@ impl AppState {
         if indices.is_empty() {
             return;
         }
-        let current = indices
-            .iter()
-            .position(|i| *i == self.connect.selected)
-            .unwrap_or(0);
+        let Some(current) = indices.iter().position(|i| *i == self.connect.selected) else {
+            self.connect.selected = indices[0];
+            return;
+        };
         let prev = if current == 0 {
             indices.len() - 1
         } else {
@@ -264,9 +264,9 @@ impl AppState {
         }
     }
 
-    /// The schema name at the current `schema_selected` index, if any.
+    /// The schema name at the current `schema_selected` index within the filtered list, if any.
     pub fn selected_schema_name(&self) -> Option<String> {
-        self.schema_names().into_iter().nth(self.schema_selected)
+        self.filtered_schema_names().into_iter().nth(self.schema_selected)
     }
 
     /// Connects to the database at `connect.selected` index.
@@ -374,9 +374,9 @@ impl AppState {
         let Some(table) = &self.loaded_table else {
             return Err(DbError::NotFound("No table loaded".to_string()));
         };
-        let schema = self
-            .selected_schema_name()
-            .unwrap_or_else(|| "public".to_string());
+        let Some(schema) = self.selected_schema_name() else {
+            return Err(DbError::NotFound("No schema selected".to_string()));
+        };
         let table_name = table.name.clone();
 
         // height - borders(2) - header(1) - separator(1) - status_bar(3)
@@ -437,8 +437,11 @@ impl AppState {
         if self.records.selected_row + 1 >= self.records.rows.len() && self.records.has_next_page()
         {
             self.records.next_page();
-            let _ = self.fetch_records_page().await;
-            self.records.selected_row = 0;
+            if self.fetch_records_page().await.is_err() {
+                self.records.prev_page();
+            } else {
+                self.records.selected_row = 0;
+            }
         } else {
             self.records.move_row_down();
         }
@@ -451,8 +454,11 @@ impl AppState {
     pub async fn move_record_up(&mut self, reset_col: bool) {
         if self.records.selected_row == 0 && self.records.has_prev_page() {
             self.records.prev_page();
-            let _ = self.fetch_records_page().await;
-            self.records.selected_row = self.records.rows.len().saturating_sub(1);
+            if self.fetch_records_page().await.is_err() {
+                self.records.next_page();
+            } else {
+                self.records.selected_row = self.records.rows.len().saturating_sub(1);
+            }
         } else {
             self.records.move_row_up();
         }
@@ -634,6 +640,20 @@ mod test {
     fn selected_schema_name_returns_none_when_empty() {
         let state = AppState::new(vec![pg_connect()]);
         assert_eq!(state.selected_schema_name(), None);
+    }
+
+    #[test]
+    fn selected_schema_name_respects_filter() {
+        // schemas: ["auth", "public"] — sorted alphabetically
+        // filter "pub" → filtered = ["public"], index 0 must return "public", not "auth"
+        let mut state = AppState::new(vec![pg_connect()]);
+        state.schemas_raw = vec![
+            TableRef { schema: "auth".to_string(), name: "tokens".to_string() },
+            TableRef { schema: "public".to_string(), name: "users".to_string() },
+        ];
+        state.search.query = "pub".to_string();
+        state.schema_selected = 0;
+        assert_eq!(state.selected_schema_name(), Some("public".to_string()));
     }
 
     #[tokio::test]

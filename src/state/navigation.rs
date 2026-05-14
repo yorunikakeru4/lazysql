@@ -31,7 +31,9 @@ impl Router {
     }
 
     pub fn pop(&mut self) {
-        self.stack.pop();
+        if self.stack.len() > 1 {
+            self.stack.pop();
+        }
     }
 
     pub fn current(&self) -> Option<&Screen> {

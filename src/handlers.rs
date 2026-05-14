@@ -167,7 +167,6 @@ fn sql_editor_text_width(terminal_width: u16) -> usize {
 }
 
 // ─── Search ──────────────────────────────────────────────────────────────────
-
 fn handle_search(key: KeyEvent, state: &mut AppState, router: &Router) {
     match key.code {
         KeyCode::Esc => {
@@ -438,10 +437,13 @@ async fn handle_database(
                 .filtered_table_names(&schema)
                 .into_iter()
                 .nth(state.table_selected);
+
             if let Some(name) = table_name {
                 state.search.reset();
+
                 if state.load_table_by_name(name).await.is_ok() {
                     let size = terminal.size()?;
+
                     if state
                         .load_table_records(size.height, size.width)
                         .await
@@ -457,6 +459,7 @@ async fn handle_database(
             state.search.open();
             state.mode = AppMode::Search;
         }
+
         KeyCode::Char(':') | KeyCode::Char('c') => {
             if state.current_db.is_some() {
                 state.sql_input.open();
@@ -477,15 +480,17 @@ async fn handle_inspect(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
 ) -> std::io::Result<()> {
     match key.code {
-        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') | KeyCode::Left => {
+        KeyCode::Esc | KeyCode::Char('q') => {
             state.search.reset();
             state.mode = AppMode::Normal;
             router.pop();
         }
+
         KeyCode::Char('/') => {
             state.search.open();
             state.mode = AppMode::Search;
         }
+
         KeyCode::Char('r') | KeyCode::Char('s') => {
             if let Some(details) = state.table_details.as_ref() {
                 let name = details.name.clone();
@@ -522,29 +527,34 @@ async fn handle_records(
             state.mode = AppMode::Normal;
             router.pop();
         }
+
         KeyCode::Down | KeyCode::Char('j') if is_vertical => state.records.move_col_right(),
-        KeyCode::Up | KeyCode::Char('k') if is_vertical => state.records.move_col_left(),
-        KeyCode::Char('l') | KeyCode::Right if is_vertical => state.move_record_down(true).await,
-        KeyCode::Char('h') | KeyCode::Left if is_vertical => state.move_record_up(true).await,
         KeyCode::Down | KeyCode::Char('j') => state.move_record_down(false).await,
+        KeyCode::Up | KeyCode::Char('k') if is_vertical => state.records.move_col_left(),
         KeyCode::Up | KeyCode::Char('k') => state.move_record_up(false).await,
+        KeyCode::Char('l') | KeyCode::Right if is_vertical => state.move_record_down(true).await,
         KeyCode::Char('l') | KeyCode::Right => state.records.move_col_right(),
+        KeyCode::Char('h') | KeyCode::Left if is_vertical => state.move_record_up(true).await,
         KeyCode::Char('h') | KeyCode::Left => state.records.move_col_left(),
-        KeyCode::Char('G') => {
-            state.records.selected_row = state.records.rows.len().saturating_sub(1);
-        }
+
         KeyCode::Char('n') => {
             if state.records.has_next_page() {
                 state.records.next_page();
-                let _ = state.fetch_records_page().await;
-                state.records.selected_row = 0;
+                if state.fetch_records_page().await.is_err() {
+                    state.records.prev_page();
+                } else {
+                    state.records.selected_row = 0;
+                }
             }
         }
         KeyCode::Char('p') => {
             if state.records.has_prev_page() {
                 state.records.prev_page();
-                let _ = state.fetch_records_page().await;
-                state.records.selected_row = 0;
+                if state.fetch_records_page().await.is_err() {
+                    state.records.next_page();
+                } else {
+                    state.records.selected_row = 0;
+                }
             }
         }
         _ => {}
