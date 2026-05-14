@@ -26,8 +26,6 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, hints: &[(&str, &str)]) {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-
     #[test]
     fn empty_hints_does_not_panic() {
         let hints: &[(&str, &str)] = &[];
