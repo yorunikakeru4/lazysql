@@ -1,4 +1,4 @@
-use crate::config::{Connect, PostgresConfig};
+use crate::config::{ConnectConfig, PostgresConfig};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -35,16 +35,16 @@ impl ConfigStorage {
     }
 
     /// Reads saved connections from disk. Returns empty vec if file is missing or unparseable.
-    pub fn load() -> Vec<Connect> {
+    pub fn load() -> Vec<ConnectConfig> {
         Self::load_from(&Self::config_path())
     }
 
     /// Writes connections to disk, creating directories as needed.
-    pub fn save(connections: &[Connect]) -> Result<(), std::io::Error> {
+    pub fn save(connections: &[ConnectConfig]) -> Result<(), std::io::Error> {
         Self::save_to(&Self::config_path(), connections)
     }
 
-    fn load_from(path: &Path) -> Vec<Connect> {
+    fn load_from(path: &Path) -> Vec<ConnectConfig> {
         let Ok(content) = fs::read_to_string(path) else {
             return Vec::new();
         };
@@ -55,7 +55,7 @@ impl ConfigStorage {
             .connections
             .into_iter()
             .map(|c| {
-                Connect::Postgres(PostgresConfig {
+                ConnectConfig::Postgres(PostgresConfig {
                     name: c.name,
                     host: c.host,
                     user: c.user,
@@ -67,7 +67,7 @@ impl ConfigStorage {
             .collect()
     }
 
-    fn save_to(path: &Path, connections: &[Connect]) -> Result<(), std::io::Error> {
+    fn save_to(path: &Path, connections: &[ConnectConfig]) -> Result<(), std::io::Error> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -75,7 +75,7 @@ impl ConfigStorage {
             connections: connections
                 .iter()
                 .map(|c| match c {
-                    Connect::Postgres(cfg) => StoredConnection {
+                    ConnectConfig::Postgres(cfg) => StoredConnection {
                         name: cfg.name.clone(),
                         host: cfg.host.clone(),
                         user: cfg.user.clone(),
@@ -110,7 +110,7 @@ mod test {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
 
-        let config = Connect::Postgres(PostgresConfig {
+        let config = ConnectConfig::Postgres(PostgresConfig {
             name: None,
             host: "localhost".to_string(),
             user: "alice".to_string(),
@@ -123,7 +123,7 @@ mod test {
         let loaded = ConfigStorage::load_from(&path);
 
         assert_eq!(loaded.len(), 1);
-        let Connect::Postgres(cfg) = &loaded[0];
+        let ConnectConfig::Postgres(cfg) = &loaded[0];
         assert_eq!(cfg.host, "localhost");
         assert_eq!(cfg.user, "alice");
         assert_eq!(cfg.db_name, "mydb");
@@ -136,7 +136,7 @@ mod test {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
 
-        let config = Connect::Postgres(PostgresConfig {
+        let config = ConnectConfig::Postgres(PostgresConfig {
             name: None,
             host: "db".to_string(),
             user: "bob".to_string(),
@@ -148,7 +148,7 @@ mod test {
         ConfigStorage::save_to(&path, &[config]).unwrap();
         let loaded = ConfigStorage::load_from(&path);
         assert_eq!(loaded.len(), 1);
-        let Connect::Postgres(cfg) = &loaded[0];
+        let ConnectConfig::Postgres(cfg) = &loaded[0];
         assert_eq!(cfg.password, None);
     }
 

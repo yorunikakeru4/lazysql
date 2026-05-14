@@ -3,6 +3,7 @@ pub(crate) mod screens;
 pub(crate) mod theme;
 pub(crate) mod widgets;
 
+use crate::state;
 use crate::state::app::AppState;
 use crate::state::navigation::{Router, Screen};
 use ratatui::Frame;
@@ -28,7 +29,7 @@ pub fn render(frame: &mut Frame, state: &AppState, router: &Router) {
         widgets::sql::render_result_popup(frame, state);
     }
 
-    if state.help_visible
+    if state.mode == state::mode::AppMode::Help
         && let Some(screen) = router.current()
     {
         widgets::help::render(frame, screen);

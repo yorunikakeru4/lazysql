@@ -1,4 +1,4 @@
-use crate::{config::Connect, db::postgres::init::PostgresRepo};
+use crate::{config::ConnectConfig, db::postgres::init::PostgresRepo};
 use std::time::Duration;
 
 /// Error type shared by database backends.
@@ -31,9 +31,9 @@ pub enum DbClient {
 }
 impl DbClient {
     /// Opens a database client from a saved connection config.
-    pub async fn new(connect_config: Connect) -> Result<Self, DbError> {
+    pub async fn new(connect_config: ConnectConfig) -> Result<Self, DbError> {
         match connect_config {
-            Connect::Postgres(cfg) => {
+            ConnectConfig::Postgres(cfg) => {
                 let repo = PostgresRepo::new(cfg).await?;
                 Ok(DbClient::Postgres(repo))
             }

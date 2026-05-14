@@ -202,7 +202,7 @@ fn truncate_cell(text: &str) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::db::repo::tables_repo::ColumnInfo;
+    use crate::db::repo::sql_repo::ColumnInfo;
     use ratatui::{Terminal, backend::TestBackend};
 
     fn app_with_expanded_records() -> AppState {

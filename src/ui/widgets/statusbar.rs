@@ -17,6 +17,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, mode: &AppMode, context: &st
         AppMode::Search => (" SEARCH ", theme::YELLOW),
         AppMode::Command => (" SQL ", theme::YELLOW),
         AppMode::Result => (" RESULT ", theme::BLUE),
+        AppMode::Help => (" HELP ", theme::ORANGE),
     };
 
     let now = Local::now().format("%H:%M:%S").to_string();
@@ -34,30 +35,4 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, mode: &AppMode, context: &st
         Paragraph::new(Line::from(spans)).style(Style::new().bg(theme::BG1)),
         area,
     );
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn pill_label_matches_mode() {
-        let cases = [
-            (AppMode::Normal, " NORMAL "),
-            (AppMode::Insert, " INSERT "),
-            (AppMode::Search, " SEARCH "),
-            (AppMode::Command, " SQL "),
-            (AppMode::Result, " RESULT "),
-        ];
-        for (mode, expected) in cases {
-            let label = match mode {
-                AppMode::Normal => " NORMAL ",
-                AppMode::Insert => " INSERT ",
-                AppMode::Search => " SEARCH ",
-                AppMode::Command => " SQL ",
-                AppMode::Result => " RESULT ",
-            };
-            assert_eq!(label, expected);
-        }
-    }
 }

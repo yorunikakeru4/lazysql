@@ -1,7 +1,7 @@
 pub mod form;
 pub use form::{FIELD_LABELS, FormState};
 
-use crate::config::Connect;
+use crate::config::ConnectConfig;
 
 /// Display-only, database-agnostic view of a connection config.
 #[derive(Debug, Clone)]
@@ -26,10 +26,10 @@ pub enum ConnectionStatus {
     Offline,
 }
 
-impl From<&Connect> for ConnectionMeta {
-    fn from(c: &Connect) -> Self {
+impl From<&ConnectConfig> for ConnectionMeta {
+    fn from(c: &ConnectConfig) -> Self {
         match c {
-            Connect::Postgres(cfg) => ConnectionMeta {
+            ConnectConfig::Postgres(cfg) => ConnectionMeta {
                 name: cfg
                     .name
                     .clone()
@@ -109,8 +109,8 @@ mod test {
 
     #[test]
     fn connection_meta_name_fallback() {
-        use crate::config::{Connect, PostgresConfig};
-        let c = Connect::Postgres(PostgresConfig {
+        use crate::config::{ConnectConfig, PostgresConfig};
+        let c = ConnectConfig::Postgres(PostgresConfig {
             name: None,
             host: "localhost".into(),
             port: 5432,
@@ -125,8 +125,8 @@ mod test {
 
     #[test]
     fn connection_meta_uses_explicit_name() {
-        use crate::config::{Connect, PostgresConfig};
-        let c = Connect::Postgres(PostgresConfig {
+        use crate::config::{ConnectConfig, PostgresConfig};
+        let c = ConnectConfig::Postgres(PostgresConfig {
             name: Some("prod".into()),
             host: "db.prod.io".into(),
             port: 5432,

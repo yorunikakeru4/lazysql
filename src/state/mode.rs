@@ -7,6 +7,7 @@ pub enum AppMode {
     Search,
     Command,
     Result,
+    Help,
 }
 
 #[cfg(test)]

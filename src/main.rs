@@ -36,7 +36,7 @@ async fn main() -> std::io::Result<()> {
 }
 
 /// Builds startup state without blocking on connection reachability probes.
-fn initialize_state(connections: Vec<config::Connect>) -> AppState {
+fn initialize_state(connections: Vec<config::ConnectConfig>) -> AppState {
     AppState::new(connections)
 }
 
@@ -75,14 +75,16 @@ mod test {
 
     #[test]
     fn initialize_state_does_not_refresh_connection_statuses_on_startup() {
-        let state = initialize_state(vec![config::Connect::Postgres(config::PostgresConfig {
-            name: Some("local".to_string()),
-            host: "127.0.0.1".to_string(),
-            user: "postgres".to_string(),
-            db_name: "postgres".to_string(),
-            port: 1,
-            password: None,
-        })]);
+        let state = initialize_state(vec![config::ConnectConfig::Postgres(
+            config::PostgresConfig {
+                name: Some("local".to_string()),
+                host: "127.0.0.1".to_string(),
+                user: "postgres".to_string(),
+                db_name: "postgres".to_string(),
+                port: 1,
+                password: None,
+            },
+        )]);
 
         assert_eq!(
             state.connection_status(0),

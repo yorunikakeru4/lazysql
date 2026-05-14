@@ -1,4 +1,4 @@
-use crate::db::repo::tables_repo::{ConstraintType, FkRef, IndexInfo};
+use crate::db::repo::sql_repo::{ConstraintType, FkRef, IndexInfo};
 use crate::state::app::AppState;
 use crate::ui::{theme, widgets};
 use ratatui::{
@@ -201,7 +201,7 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
     );
 }
 
-fn inspect_column_widths(fields: &[&crate::db::repo::tables_repo::TableField]) -> [u16; 5] {
+fn inspect_column_widths(fields: &[&crate::db::repo::sql_repo::TableField]) -> [u16; 5] {
     let mut widths = [
         "COLUMN".len(),
         "TYPE".len(),
@@ -239,7 +239,7 @@ fn constraint_text_len(constraint: &Option<ConstraintType>) -> usize {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::db::repo::tables_repo::TableField;
+    use crate::db::repo::sql_repo::TableField;
 
     #[test]
     fn inspect_widths_use_max_visible_text_not_fill_columns() {

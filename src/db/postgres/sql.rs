@@ -1,6 +1,6 @@
 use crate::db::postgres::init::PostgresRepo;
 use crate::db::repo::db_repo::DbError;
-use crate::db::repo::tables_repo::{
+use crate::db::repo::sql_repo::{
     ColumnInfo, Database, FetchRowsResult, FkRef, IndexInfo, RowData, SqlExecuteOptions,
     SqlExecuteResult, SqlPage, Table, TableDetails, TableField, TableRef, parse_constraint,
 };

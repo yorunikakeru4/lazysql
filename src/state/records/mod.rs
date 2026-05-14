@@ -1,4 +1,4 @@
-use crate::db::repo::tables_repo::{ColumnInfo, FetchRowsResult, RowData};
+use crate::db::repo::sql_repo::{ColumnInfo, FetchRowsResult, RowData};
 
 /// Maximum number of characters displayed per cell before truncation.
 pub const MAX_CELL_LEN: usize = 50;
@@ -350,8 +350,8 @@ mod test {
     fn move_col_right_stops_at_last() {
         let mut state = RecordsState::default();
         state.columns = vec![
-            crate::db::repo::tables_repo::ColumnInfo { name: "a".into() },
-            crate::db::repo::tables_repo::ColumnInfo { name: "b".into() },
+            crate::db::repo::sql_repo::ColumnInfo { name: "a".into() },
+            crate::db::repo::sql_repo::ColumnInfo { name: "b".into() },
         ];
         state.move_col_right();
         assert_eq!(state.selected_col, 1);

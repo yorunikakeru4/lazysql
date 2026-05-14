@@ -1,7 +1,7 @@
 pub mod storage;
 
 #[derive(Debug, Clone)]
-pub enum Connect {
+pub enum ConnectConfig {
     Postgres(PostgresConfig),
     // MySql(MySqlConfig),
     // Sqlite(SqliteConfig),

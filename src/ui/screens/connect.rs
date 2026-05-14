@@ -56,7 +56,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         frame,
         chunks[details_idx + 1],
         &state.mode,
-        &format!("dbx — {} connections", state.connections.len()),
+        &format!("dbx — {} connections", state.connections_config.len()),
         "j/k:move  /:filter  a:add  ↵:connect",
     );
 }
@@ -65,7 +65,7 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
     let filtered_indices = state.filtered_connection_indices();
     let metas: Vec<(usize, ConnectionMeta)> = filtered_indices
         .iter()
-        .map(|i| (*i, ConnectionMeta::from(&state.connections[*i])))
+        .map(|i| (*i, ConnectionMeta::from(&state.connections_config[*i])))
         .collect();
 
     let header = Row::new(vec![
@@ -99,10 +99,10 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
         Constraint::Length(12),
     ];
 
-    let count_str = if state.connections.is_empty() {
+    let count_str = if state.connections_config.is_empty() {
         "0/0".to_string()
     } else if metas.is_empty() {
-        format!("0/{}", state.connections.len())
+        format!("0/{}", state.connections_config.len())
     } else {
         let selected = state
             .selected_filtered_connection_position()
@@ -169,7 +169,12 @@ pub(crate) fn render_connect_error_popup(frame: &mut Frame, state: &AppState) {
 }
 
 fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
-    let metas: Vec<ConnectionMeta> = state.connections.iter().map(ConnectionMeta::from).collect();
+    let metas: Vec<ConnectionMeta> = state
+        .connections_config
+        .iter()
+        .map(ConnectionMeta::from)
+        .collect();
+
     let selected = state
         .selected_filtered_connection_position()
         .and_then(|_| metas.get(state.connect.selected));
@@ -179,8 +184,6 @@ fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
             Line::from(vec![
                 Span::styled("  driver  ", Style::new().fg(theme::FG4)),
                 Span::styled(&m.driver, Style::new().fg(theme::BLUE)),
-                Span::styled("   ·   ssl  ", Style::new().fg(theme::FG4)),
-                Span::styled("—", Style::new().fg(theme::FG3)),
             ]),
             Line::from(vec![
                 Span::styled("  user    ", Style::new().fg(theme::FG4)),

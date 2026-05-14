@@ -19,9 +19,9 @@ pub async fn handle(
     router: &mut Router,
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
 ) -> std::io::Result<bool> {
-    if state.help_visible {
+    if state.mode == AppMode::Help {
         if matches!(key.code, KeyCode::Char('?') | KeyCode::Esc) {
-            state.help_visible = false;
+            state.mode = AppMode::Normal;
         }
         return Ok(true);
     }
@@ -49,7 +49,7 @@ pub async fn handle(
     }
 
     if key.code == KeyCode::Char('?') {
-        state.help_visible = true;
+        state.mode = AppMode::Help;
         return Ok(true);
     }
 
@@ -140,7 +140,7 @@ async fn execute_sql_editor_query(
         return Ok(());
     }
 
-    if db::postgres::tables::is_returning_query(&query) {
+    if db::postgres::sql::is_returning_query(&query) {
         let size = terminal.size()?;
         match state.execute_sql_for_records(size.height, size.width).await {
             Ok(_) => {
@@ -240,14 +240,14 @@ async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router
             if !state.search.query.is_empty() {
                 state.select_next_filtered_connection();
             } else {
-                state.connect.select_next(state.connections.len());
+                state.connect.select_next(state.connections_config.len());
             }
         }
         KeyCode::Up | KeyCode::Char('k') => {
             if !state.search.query.is_empty() {
                 state.select_prev_filtered_connection();
             } else {
-                state.connect.select_prev(state.connections.len());
+                state.connect.select_prev(state.connections_config.len());
             }
         }
         KeyCode::Char('/') => {
@@ -266,8 +266,8 @@ async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router
             if state.selected_filtered_connection_position().is_none() {
                 return;
             }
-            if let Some(config::Connect::Postgres(cfg)) =
-                state.connections.get(state.connect.selected)
+            if let Some(config::ConnectConfig::Postgres(cfg)) =
+                state.connections_config.get(state.connect.selected)
             {
                 state.form = FormState::from_postgres_config(cfg, Some(state.connect.selected));
                 state.mode = AppMode::Insert;
@@ -275,20 +275,20 @@ async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router
             }
         }
         KeyCode::Char('d') => {
-            if !state.connections.is_empty() {
+            if !state.connections_config.is_empty() {
                 state.remove_connection_at(state.connect.selected);
-                if state.connect.selected >= state.connections.len() {
-                    state.connect.selected = state.connections.len().saturating_sub(1);
+                if state.connect.selected >= state.connections_config.len() {
+                    state.connect.selected = state.connections_config.len().saturating_sub(1);
                 }
                 state.clamp_connection_selection();
-                let _ = ConfigStorage::save(&state.connections);
+                let _ = ConfigStorage::save(&state.connections_config);
             }
         }
         KeyCode::Char('l') | KeyCode::Enter => {
             if state.selected_filtered_connection_position().is_none() {
                 return;
             }
-            if !state.connections.is_empty()
+            if !state.connections_config.is_empty()
                 && state.connect_selected().await.is_ok()
                 && state.load_schemas().await.is_ok()
             {
@@ -331,16 +331,18 @@ async fn save_connection_form(state: &mut AppState, router: &mut Router) {
         Ok(cfg) => {
             state.form.error = None;
             if let Some(editing_index) = state.form.editing_index {
-                if editing_index < state.connections.len() {
-                    state.connections[editing_index] = config::Connect::Postgres(cfg);
+                if editing_index < state.connections_config.len() {
+                    state.connections_config[editing_index] = config::ConnectConfig::Postgres(cfg);
                     state.connect.selected = editing_index;
                 }
             } else {
-                state.connections.push(config::Connect::Postgres(cfg));
-                state.connect.selected = state.connections.len().saturating_sub(1);
+                state
+                    .connections_config
+                    .push(config::ConnectConfig::Postgres(cfg));
+                state.connect.selected = state.connections_config.len().saturating_sub(1);
             }
             state.sync_connection_statuses();
-            let _ = ConfigStorage::save(&state.connections);
+            let _ = ConfigStorage::save(&state.connections_config);
             state
                 .refresh_connection_status(state.connect.selected)
                 .await;
@@ -573,10 +575,10 @@ mod test {
     fn records_state_with_layout(min_table_width: u16) -> AppState {
         let mut state = AppState::new(vec![]);
         state.records.columns = vec![
-            crate::db::repo::tables_repo::ColumnInfo {
+            crate::db::repo::sql_repo::ColumnInfo {
                 name: "id".to_string(),
             },
-            crate::db::repo::tables_repo::ColumnInfo {
+            crate::db::repo::sql_repo::ColumnInfo {
                 name: "title".to_string(),
             },
         ];

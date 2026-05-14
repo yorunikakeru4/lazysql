@@ -1,7 +1,7 @@
-use crate::config::Connect;
-use crate::config::Connect::Postgres;
+use crate::config::ConnectConfig;
+use crate::config::ConnectConfig::Postgres;
 use crate::db::repo::db_repo::{DbClient, DbError};
-use crate::db::repo::tables_repo::{
+use crate::db::repo::sql_repo::{
     Database, FetchRowsResult, SqlExecuteOptions, SqlExecuteResult, SqlPage, Table, TableDetails,
     TableRef,
 };
@@ -17,29 +17,32 @@ const CONNECTION_STATUS_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
 pub struct AppState {
-    pub connections: Vec<Connect>,
+    pub connections_config: Vec<ConnectConfig>,
     pub connection_statuses: Vec<ConnectionStatus>,
     pub current_db: Option<DbClient>,
+
+    pub mode: AppMode,
+
+    pub table_selected: usize,
+    pub schema_selected: usize,
+    pub schemas_raw: Vec<TableRef>,
+    pub table_details: Option<TableDetails>,
+    pub active_pane: ActivePane,
+    pub loaded_table: Option<Table>,
+
+    /// States for various UI components. Kept here to persist across screen changes.
     pub connect: ConnectState,
     pub form: FormState,
     pub search: SearchState,
     pub sql_input: SqlInputState,
     pub records: RecordsState,
-    pub schemas_raw: Vec<TableRef>,
-    pub schema_selected: usize,
-    pub table_selected: usize,
-    pub loaded_table: Option<Table>,
-    pub mode: AppMode,
-    pub active_pane: ActivePane,
-    pub help_visible: bool,
-    pub table_details: Option<TableDetails>,
 }
 
 impl AppState {
-    pub fn new(connections: Vec<Connect>) -> Self {
+    pub fn new(connections: Vec<ConnectConfig>) -> Self {
         AppState {
             connection_statuses: vec![ConnectionStatus::Unknown; connections.len()],
-            connections,
+            connections_config: connections,
             current_db: None,
             connect: ConnectState::default(),
             form: FormState::default(),
@@ -52,7 +55,6 @@ impl AppState {
             loaded_table: None,
             mode: AppMode::default(),
             active_pane: ActivePane::default(),
-            help_visible: false,
             table_details: None,
         }
     }
@@ -79,15 +81,15 @@ impl AppState {
     /// Keeps the status list aligned with the connection list.
     pub fn sync_connection_statuses(&mut self) {
         self.connection_statuses
-            .resize(self.connections.len(), ConnectionStatus::Unknown);
+            .resize(self.connections_config.len(), ConnectionStatus::Unknown);
     }
 
     /// Removes one saved connection and its status entry by index.
     pub fn remove_connection_at(&mut self, index: usize) {
-        if index >= self.connections.len() {
+        if index >= self.connections_config.len() {
             return;
         }
-        self.connections.remove(index);
+        self.connections_config.remove(index);
         if index < self.connection_statuses.len() {
             self.connection_statuses.remove(index);
         }
@@ -113,13 +115,13 @@ impl AppState {
 
     /// Refreshes the reachability status for all saved connections.
     pub async fn refresh_connection_statuses(&mut self) {
-        for index in 0..self.connections.len() {
+        for index in 0..self.connections_config.len() {
             self.refresh_connection_status(index).await;
         }
     }
     /// Refreshes the reachability status for one saved connection.
     pub async fn refresh_connection_status(&mut self, index: usize) {
-        let Some(connect) = self.connections.get(index).cloned() else {
+        let Some(connect) = self.connections_config.get(index).cloned() else {
             return;
         };
         let status =
@@ -132,7 +134,7 @@ impl AppState {
 
     /// Connection indices filtered by display name.
     pub fn filtered_connection_indices(&self) -> Vec<usize> {
-        self.connections
+        self.connections_config
             .iter()
             .enumerate()
             .filter_map(|(i, c)| {
@@ -266,42 +268,41 @@ impl AppState {
 
     /// The schema name at the current `schema_selected` index within the filtered list, if any.
     pub fn selected_schema_name(&self) -> Option<String> {
-        self.filtered_schema_names().into_iter().nth(self.schema_selected)
+        self.filtered_schema_names()
+            .into_iter()
+            .nth(self.schema_selected)
     }
 
     /// Connects to the database at `connect.selected` index.
     pub async fn connect_selected(&mut self) -> Result<(), DbError> {
         self.connect.error = None;
         let idx = self.connect.selected;
-        if idx >= self.connections.len() {
+        if idx >= self.connections_config.len() {
             let msg = "No connection at selected index".to_string();
             self.connect.error = Some(msg.clone());
             return Err(DbError::NotFound(msg));
         }
-        match self.connections[idx].clone() {
-            conn @ Postgres(_) => match tokio::time::timeout(
-                CONNECTION_STATUS_TIMEOUT,
-                DbClient::new(conn),
-            )
-            .await
-            {
-                Err(_) => {
-                    let e = DbError::ConnectionTimeout(CONNECTION_STATUS_TIMEOUT);
-                    self.connect.error = Some(e.to_string());
-                    self.set_connection_status(idx, ConnectionStatus::Offline);
-                    Err(e)
+        match self.connections_config[idx].clone() {
+            conn @ Postgres(_) => {
+                match tokio::time::timeout(CONNECTION_STATUS_TIMEOUT, DbClient::new(conn)).await {
+                    Err(_) => {
+                        let e = DbError::ConnectionTimeout(CONNECTION_STATUS_TIMEOUT);
+                        self.connect.error = Some(e.to_string());
+                        self.set_connection_status(idx, ConnectionStatus::Offline);
+                        Err(e)
+                    }
+                    Ok(Ok(client)) => {
+                        self.current_db = Some(client);
+                        self.set_connection_status(idx, ConnectionStatus::Online);
+                        Ok(())
+                    }
+                    Ok(Err(e)) => {
+                        self.connect.error = Some(e.to_string());
+                        self.set_connection_status(idx, ConnectionStatus::Offline);
+                        Err(e)
+                    }
                 }
-                Ok(Ok(client)) => {
-                    self.current_db = Some(client);
-                    self.set_connection_status(idx, ConnectionStatus::Online);
-                    Ok(())
-                }
-                Ok(Err(e)) => {
-                    self.connect.error = Some(e.to_string());
-                    self.set_connection_status(idx, ConnectionStatus::Offline);
-                    Err(e)
-                }
-            },
+            }
         }
     }
 
@@ -570,8 +571,8 @@ mod test {
     use super::*;
     use crate::config::PostgresConfig;
 
-    fn pg_connect() -> Connect {
-        Connect::Postgres(PostgresConfig {
+    fn pg_connect() -> ConnectConfig {
+        ConnectConfig::Postgres(PostgresConfig {
             name: None,
             host: "h".to_string(),
             user: "u".to_string(),
@@ -581,8 +582,8 @@ mod test {
         })
     }
 
-    fn named_pg_connect(name: &str) -> Connect {
-        Connect::Postgres(PostgresConfig {
+    fn named_pg_connect(name: &str) -> ConnectConfig {
+        ConnectConfig::Postgres(PostgresConfig {
             name: Some(name.to_string()),
             host: "h".to_string(),
             user: "u".to_string(),
@@ -648,8 +649,14 @@ mod test {
         // filter "pub" → filtered = ["public"], index 0 must return "public", not "auth"
         let mut state = AppState::new(vec![pg_connect()]);
         state.schemas_raw = vec![
-            TableRef { schema: "auth".to_string(), name: "tokens".to_string() },
-            TableRef { schema: "public".to_string(), name: "users".to_string() },
+            TableRef {
+                schema: "auth".to_string(),
+                name: "tokens".to_string(),
+            },
+            TableRef {
+                schema: "public".to_string(),
+                name: "users".to_string(),
+            },
         ];
         state.search.query = "pub".to_string();
         state.schema_selected = 0;
@@ -666,7 +673,7 @@ mod test {
 
     #[tokio::test]
     async fn connect_selected_sets_error_on_failure() {
-        let mut state = AppState::new(vec![Connect::Postgres(PostgresConfig {
+        let mut state = AppState::new(vec![ConnectConfig::Postgres(PostgresConfig {
             name: Some("bad".to_string()),
             host: "127.0.0.1".to_string(),
             user: "postgres".to_string(),
@@ -854,7 +861,7 @@ mod test {
     fn sync_connection_statuses_tracks_connection_count() {
         let mut state = AppState::new(vec![named_pg_connect("Local Dev")]);
         state.set_connection_status(0, ConnectionStatus::Online);
-        state.connections.push(named_pg_connect("Prod"));
+        state.connections_config.push(named_pg_connect("Prod"));
 
         state.sync_connection_statuses();
 
@@ -863,7 +870,7 @@ mod test {
             vec![ConnectionStatus::Online, ConnectionStatus::Unknown]
         );
 
-        state.connections.pop();
+        state.connections_config.pop();
         state.sync_connection_statuses();
 
         assert_eq!(state.connection_statuses, vec![ConnectionStatus::Online]);
@@ -882,7 +889,7 @@ mod test {
 
         state.remove_connection_at(1);
 
-        assert_eq!(state.connections.len(), 2);
+        assert_eq!(state.connections_config.len(), 2);
         assert_eq!(
             state.connection_statuses,
             vec![ConnectionStatus::Online, ConnectionStatus::Unknown]
