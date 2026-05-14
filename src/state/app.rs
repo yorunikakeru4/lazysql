@@ -2,9 +2,11 @@ use crate::config::Connect;
 use crate::config::Connect::Postgres;
 use crate::db::repo::db_repo::{DbClient, DbError};
 use crate::db::repo::tables_repo::{
-    Database, FetchRowsResult, SqlExecuteOptions, SqlExecuteResult, SqlPage, Table, TableRef,
+    Database, FetchRowsResult, SqlExecuteOptions, SqlExecuteResult, SqlPage, Table, TableDetails,
+    TableRef,
 };
-use crate::state::connection::{ConnectState, FormState};
+use crate::state::connection::{ActivePane, ConnectState, FormState};
+use crate::state::mode::AppMode;
 use crate::state::records::{RecordsSource, RecordsState};
 use crate::state::search::SearchState;
 use crate::state::sql_input::{SqlInputState, SqlResult};
@@ -23,6 +25,10 @@ pub struct AppState {
     pub schema_selected: usize,
     pub table_selected: usize,
     pub loaded_table: Option<Table>,
+    pub mode: AppMode,
+    pub active_pane: ActivePane,
+    pub help_visible: bool,
+    pub table_details: Option<TableDetails>,
 }
 
 impl AppState {
@@ -39,6 +45,10 @@ impl AppState {
             schema_selected: 0,
             table_selected: 0,
             loaded_table: None,
+            mode: AppMode::default(),
+            active_pane: ActivePane::default(),
+            help_visible: false,
+            table_details: None,
         }
     }
 
@@ -145,6 +155,16 @@ impl AppState {
         };
         let mut tables = repo.get_tables(vec![name]).await?;
         self.loaded_table = tables.pop();
+        Ok(())
+    }
+
+    /// Loads full schema details for the selected table into `table_details`.
+    #[allow(dead_code)]
+    pub async fn load_table_details(&mut self, schema: &str, table: &str) -> Result<(), DbError> {
+        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+            return Err(DbError::NotFound("No active connection".to_string()));
+        };
+        self.table_details = Some(repo.get_table_details(schema, table).await?);
         Ok(())
     }
 

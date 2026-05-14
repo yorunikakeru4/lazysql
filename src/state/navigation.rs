@@ -1,11 +1,10 @@
 /// Screens available in the TUI navigation stack.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Screen {
     Connect,
     AddConnection,
-    Schemas,
-    Tables,
-    TableView,
+    Database,
+    Inspect,
     Records,
 }
 
