@@ -4,6 +4,7 @@ pub use form::{FIELD_LABELS, FormState};
 use crate::config::Connect;
 
 /// Health of a saved connection (probed on screen entry).
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum HealthStatus {
     #[default]
@@ -14,6 +15,7 @@ pub enum HealthStatus {
 }
 
 /// Display-only, database-agnostic view of a connection config.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ConnectionMeta {
     pub name: String,
@@ -42,6 +44,7 @@ impl From<&Connect> for ConnectionMeta {
 }
 
 /// Which pane has focus in the Database split view.
+#[allow(dead_code)]
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum ActivePane {
     #[default]
@@ -53,6 +56,7 @@ pub enum ActivePane {
 pub struct ConnectState {
     pub selected: usize,
     pub error: Option<String>,
+    #[allow(dead_code)]
     pub health: Vec<HealthStatus>,
 }
 
