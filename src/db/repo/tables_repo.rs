@@ -50,8 +50,39 @@ pub struct TableField {
     pub name: String,
     pub data_type: String,
     pub is_nullable: String,
-    pub constraint_type: Option<ConstraintType>,
-    pub default: Option<String>,
+    pub constraint: Option<ConstraintType>,
+    pub default_value: Option<String>,
+}
+
+/// Metadata for a single index on a table.
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct IndexInfo {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub is_unique: bool,
+    pub is_primary: bool,
+}
+
+/// A table that holds a foreign key referencing this table.
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct FkRef {
+    pub from_table: String,
+    pub column: String,
+}
+
+/// Rich schema metadata for a single table — used by the Inspect screen.
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct TableDetails {
+    pub name: String,
+    pub schema: String,
+    pub row_count: Option<i64>,
+    pub size_pretty: Option<String>,
+    pub fields: Vec<TableField>,
+    pub indexes: Vec<IndexInfo>,
+    pub fk_refs: Vec<FkRef>,
 }
 
 /// Column metadata for a result set.
@@ -89,6 +120,8 @@ pub trait Database {
         limit: u16,
         offset: u64,
     ) -> Result<FetchRowsResult, DbError>;
+    #[allow(dead_code)]
+    async fn get_table_details(&self, schema: &str, table: &str) -> Result<TableDetails, DbError>;
 }
 
 #[cfg(test)]

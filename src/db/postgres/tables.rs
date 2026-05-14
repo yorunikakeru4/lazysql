@@ -1,8 +1,8 @@
 use crate::db::postgres::init::PostgresRepo;
 use crate::db::repo::db_repo::DbError;
 use crate::db::repo::tables_repo::{
-    ColumnInfo, Database, FetchRowsResult, RowData, SqlExecuteOptions, SqlExecuteResult, SqlPage,
-    Table, TableField, TableRef, parse_constraint,
+    ColumnInfo, Database, FetchRowsResult, FkRef, IndexInfo, RowData, SqlExecuteOptions,
+    SqlExecuteResult, SqlPage, Table, TableDetails, TableField, TableRef, parse_constraint,
 };
 use sqlparser::ast::Statement;
 use sqlparser::dialect::PostgreSqlDialect;
@@ -247,6 +247,139 @@ impl Database for PostgresRepo {
             columns,
             rows: data,
             total_count: total_count as u64,
+        })
+    }
+
+    async fn get_table_details(&self, schema: &str, table: &str) -> Result<TableDetails, DbError> {
+        // 1. columns
+        let col_rows = self
+            .client
+            .query(
+                "SELECT
+                c.column_name,
+                c.data_type,
+                c.is_nullable,
+                tc.constraint_type,
+                rc2.table_name AS referenced_table,
+                c.column_default
+             FROM information_schema.columns c
+             LEFT JOIN information_schema.key_column_usage kcu
+                 ON kcu.table_schema = c.table_schema
+                 AND kcu.table_name  = c.table_name
+                 AND kcu.column_name = c.column_name
+             LEFT JOIN information_schema.table_constraints tc
+                 ON tc.constraint_name = kcu.constraint_name
+                 AND tc.table_schema   = c.table_schema
+             LEFT JOIN information_schema.referential_constraints rc
+                 ON rc.constraint_name = tc.constraint_name
+             LEFT JOIN information_schema.table_constraints rc2
+                 ON rc2.constraint_name = rc.unique_constraint_name
+             WHERE c.table_schema = $1 AND c.table_name = $2
+             ORDER BY c.ordinal_position",
+                &[&schema, &table],
+            )
+            .await
+            .map_err(DbError::Postgres)?;
+
+        let fields: Vec<TableField> = col_rows
+            .iter()
+            .map(|r| TableField {
+                name: r.get(0),
+                data_type: r.get(1),
+                is_nullable: r.get(2),
+                constraint: parse_constraint(r.get(3), r.get(4)),
+                default_value: r.get(5),
+            })
+            .collect();
+
+        // 2. row count + size
+        let stat_row = self
+            .client
+            .query_opt(
+                "SELECT reltuples::bigint, pg_size_pretty(pg_total_relation_size(c.oid))
+             FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = $1 AND c.relname = $2",
+                &[&schema, &table],
+            )
+            .await
+            .map_err(DbError::Postgres)?;
+        let (row_count, size_pretty) = stat_row
+            .map(|r| (r.get::<_, Option<i64>>(0), r.get::<_, Option<String>>(1)))
+            .unwrap_or((None, None));
+
+        // 3. indexes
+        let idx_rows = self
+            .client
+            .query(
+                "SELECT indexname, indexdef
+             FROM pg_indexes
+             WHERE schemaname = $1 AND tablename = $2",
+                &[&schema, &table],
+            )
+            .await
+            .map_err(DbError::Postgres)?;
+
+        let indexes: Vec<IndexInfo> = idx_rows
+            .iter()
+            .map(|r| {
+                let name: String = r.get(0);
+                let def: String = r.get(1);
+                let is_primary = def.to_uppercase().contains("PRIMARY");
+                let is_unique = def.to_uppercase().contains("UNIQUE") || is_primary;
+                let columns = def
+                    .rfind('(')
+                    .and_then(|s| def.rfind(')').map(|e| (s, e)))
+                    .map(|(s, e)| {
+                        def[s + 1..e]
+                            .split(',')
+                            .map(|c| c.trim().to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                IndexInfo {
+                    name,
+                    columns,
+                    is_unique,
+                    is_primary,
+                }
+            })
+            .collect();
+
+        // 4. inbound FK refs
+        let fk_rows = self
+            .client
+            .query(
+                "SELECT src_tc.table_name, src_kcu.column_name
+             FROM information_schema.referential_constraints rc
+             JOIN information_schema.table_constraints src_tc
+                 ON src_tc.constraint_name = rc.constraint_name
+             JOIN information_schema.key_column_usage src_kcu
+                 ON src_kcu.constraint_name = rc.constraint_name
+             JOIN information_schema.table_constraints tgt_tc
+                 ON tgt_tc.constraint_name = rc.unique_constraint_name
+             WHERE tgt_tc.table_schema = $1 AND tgt_tc.table_name = $2",
+                &[&schema, &table],
+            )
+            .await
+            .map_err(DbError::Postgres)?;
+
+        let fk_refs: Vec<FkRef> = fk_rows
+            .iter()
+            .map(|r| FkRef {
+                from_table: r.get(0),
+                column: r.get(1),
+            })
+            .collect();
+
+        Ok(TableDetails {
+            name: table.to_string(),
+            schema: schema.to_string(),
+            row_count,
+            size_pretty,
+            fields,
+            indexes,
+            fk_refs,
         })
     }
 }
@@ -561,6 +694,15 @@ mod test {
         assert_eq!(result.rows.len(), 1);
         assert_eq!(result.rows[0][0], Some("1".into()));
         assert_eq!(result.rows[0][1], Some("test".into()));
+    }
+
+    #[tokio::test]
+    async fn get_table_details_returns_fields_and_indexes() {
+        let client = PostgresRepo::new(test_config()).await.unwrap();
+        let details = client.get_table_details("public", "users").await.unwrap();
+        assert_eq!(details.name, "users");
+        assert!(!details.fields.is_empty());
+        assert!(!details.indexes.is_empty());
     }
 
     #[tokio::test]
