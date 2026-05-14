@@ -273,9 +273,10 @@ fn handle_search(key: crossterm::event::KeyEvent, state: &mut AppState, router: 
             Some(Screen::Connect) => state.select_prev_filtered_connection(),
             Some(Screen::Database) => {
                 if state.active_pane == ActivePane::Schemas {
-                    state.schema_selected = state.schema_selected.saturating_sub(1);
+                    state.select_prev_filtered_schema();
                 } else {
-                    state.table_selected = state.table_selected.saturating_sub(1);
+                    let schema = state.selected_schema_name().unwrap_or_default();
+                    state.select_prev_filtered_table(&schema);
                 }
             }
             _ => {}
@@ -472,9 +473,10 @@ async fn handle_database(
         }
         KeyCode::Up | KeyCode::Char('k') => {
             if state.active_pane == ActivePane::Schemas {
-                state.schema_selected = state.schema_selected.saturating_sub(1);
+                state.select_prev_filtered_schema();
             } else {
-                state.table_selected = state.table_selected.saturating_sub(1);
+                let schema = state.selected_schema_name().unwrap_or_default();
+                state.select_prev_filtered_table(&schema);
             }
         }
         KeyCode::Char('G') => {

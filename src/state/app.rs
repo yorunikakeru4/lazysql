@@ -217,6 +217,32 @@ impl AppState {
             .collect()
     }
 
+    /// Moves schema selection up within the filtered schema list, wrapping to the end.
+    pub fn select_prev_filtered_schema(&mut self) {
+        let len = self.filtered_schema_names().len();
+        if len == 0 {
+            return;
+        }
+        self.schema_selected = if self.schema_selected == 0 {
+            len - 1
+        } else {
+            self.schema_selected - 1
+        };
+    }
+
+    /// Moves table selection up within the filtered table list, wrapping to the end.
+    pub fn select_prev_filtered_table(&mut self, schema: &str) {
+        let len = self.filtered_table_names(schema).len();
+        if len == 0 {
+            return;
+        }
+        self.table_selected = if self.table_selected == 0 {
+            len - 1
+        } else {
+            self.table_selected - 1
+        };
+    }
+
     /// Clamps `schema_selected` and `table_selected` to the lengths of the
     /// currently filtered lists. Call after every query change.
     pub fn clamp_search_selections(&mut self) {
@@ -655,6 +681,46 @@ mod test {
         state.search.query = "user".to_string();
         let result = state.filtered_table_names("public");
         assert_eq!(result, vec!["users"]);
+    }
+
+    #[test]
+    fn select_prev_filtered_schema_wraps_to_last_visible_schema() {
+        let mut state = AppState::new(vec![pg_connect()]);
+        state.schemas_raw = vec![
+            TableRef {
+                schema: "public".to_string(),
+                name: "users".to_string(),
+            },
+            TableRef {
+                schema: "auth".to_string(),
+                name: "tokens".to_string(),
+            },
+        ];
+        state.schema_selected = 0;
+
+        state.select_prev_filtered_schema();
+
+        assert_eq!(state.schema_selected, 1);
+    }
+
+    #[test]
+    fn select_prev_filtered_table_wraps_to_last_visible_table() {
+        let mut state = AppState::new(vec![pg_connect()]);
+        state.schemas_raw = vec![
+            TableRef {
+                schema: "public".to_string(),
+                name: "users".to_string(),
+            },
+            TableRef {
+                schema: "public".to_string(),
+                name: "posts".to_string(),
+            },
+        ];
+        state.table_selected = 0;
+
+        state.select_prev_filtered_table("public");
+
+        assert_eq!(state.table_selected, 1);
     }
 
     #[test]
