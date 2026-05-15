@@ -58,9 +58,26 @@ pub enum ActivePane {
 pub struct ConnectState {
     pub selected: usize,
     pub error: Option<String>,
+    /// Whether the inline add/edit connection form is open on the Connections screen.
+    pub form_open: bool,
+    /// Last reachability result for the unsaved connection form draft.
+    pub draft_status: Option<ConnectionStatus>,
 }
 
 impl ConnectState {
+    /// Opens the inline connection form and clears draft-only state.
+    pub fn open_form(&mut self) {
+        self.form_open = true;
+        self.draft_status = None;
+        self.error = None;
+    }
+
+    /// Closes the inline connection form and clears draft-only state.
+    pub fn close_form(&mut self) {
+        self.form_open = false;
+        self.draft_status = None;
+    }
+
     /// Moves selection down, wrapping around when reaching the end.
     pub fn select_next(&mut self, len: usize) {
         if len == 0 {
@@ -107,6 +124,26 @@ mod test {
         state.select_next(0);
         state.select_prev(0);
         assert_eq!(state.selected, 0);
+    }
+
+    #[test]
+    fn default_inline_form_state_is_closed_without_draft_status() {
+        let state = ConnectState::default();
+
+        assert!(!state.form_open);
+        assert_eq!(state.draft_status, None);
+    }
+
+    #[test]
+    fn close_form_resets_inline_form_flags() {
+        let mut state = ConnectState::default();
+        state.form_open = true;
+        state.draft_status = Some(ConnectionStatus::Offline);
+
+        state.close_form();
+
+        assert!(!state.form_open);
+        assert_eq!(state.draft_status, None);
     }
 
     #[test]

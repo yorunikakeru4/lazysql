@@ -24,16 +24,9 @@ fn sections_for(screen: &Screen) -> &'static [HelpSection] {
                 ("e", "edit selected"),
                 ("d", "delete selected"),
                 ("r", "refresh statuses"),
+                ("Ctrl+T", "test form"),
+                ("Ctrl+S", "save form"),
                 ("q", "quit"),
-            ],
-        }],
-        Screen::AddConnection => &[HelpSection {
-            title: "form",
-            entries: &[
-                ("Tab/↓", "next field"),
-                ("BackTab/↑", "prev field"),
-                ("↵ / Ctrl+S", "save"),
-                ("Esc", "cancel"),
             ],
         }],
         Screen::Database => &[

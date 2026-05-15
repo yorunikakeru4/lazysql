@@ -18,10 +18,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, hints: &[(&str, &str)]) {
         spans.push(Span::styled(":", Style::new().fg(theme::FG4)));
         spans.push(Span::styled(*action, Style::new().fg(theme::FG3)));
     }
-    frame.render_widget(
-        Paragraph::new(Line::from(spans)).style(Style::new().bg(theme::BG1)),
-        area,
-    );
+    frame.render_widget(Paragraph::new(Line::from(spans)).style(Style::new()), area);
 }
 
 #[cfg(test)]
