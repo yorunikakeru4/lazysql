@@ -851,7 +851,8 @@ mod test {
 
     #[tokio::test]
     async fn enter_in_driver_picker_opens_form_for_selected_driver() {
-        let mut state = AppState::new(vec![]);
+        let theme = crate::themes::builtin::fallback_theme();
+        let mut state = AppState::new(vec![], theme.clone(), vec![theme]);
         let mut router = Router::new();
         state.connect.open_driver_picker();
         state.connect.driver_picker.query = "my".to_string();
