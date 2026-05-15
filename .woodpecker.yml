@@ -22,15 +22,23 @@ steps:
       TEST_DB_NAME: db_test
       TEST_DB_PASSWORD: vBnA46MVSs
       PGPASSWORD: vBnA46MVSs
+      TEST_MYSQL_HOST: mysql
+      TEST_MYSQL_PORT: "3306"
+      TEST_MYSQL_USER: test_user
+      TEST_MYSQL_DB: db_test
+      TEST_MYSQL_PASSWORD: xK9mP2wQr7
     commands:
       - |
         set -eu
         apt-get update
         apt-get install -y --no-install-recommends \
-          postgresql-client
+          postgresql-client \
+          default-mysql-client
         rm -rf /var/lib/apt/lists/*
       - until pg_isready -h postgres -p 5432 -U test_user -d db_test; do sleep 1; done
-      - psql -h postgres -p 5432 -U test_user -d db_test -f init.sql
+      - until mysqladmin ping -h mysql -u test_user -pxK9mP2wQr7 --silent; do sleep 1; done
+      - psql -h postgres -p 5432 -U test_user -d db_test -f init/postgres.sql
+      - mysql -h mysql -u test_user -pxK9mP2wQr7 db_test < init/mysql.sql
       - cargo test -v
     when:
       event:
@@ -67,3 +75,13 @@ services:
       POSTGRES_USER: test_user
       POSTGRES_PASSWORD: vBnA46MVSs
       POSTGRES_DB: db_test
+
+  - name: mysql
+    image: mysql:8.4
+    environment:
+      MYSQL_USER: test_user
+      MYSQL_PASSWORD: xK9mP2wQr7
+      MYSQL_DATABASE: db_test
+      MYSQL_ROOT_PASSWORD: rootSecret42
+    commands:
+      - --mysql-native-password=ON
