@@ -1,3 +1,7 @@
+when:
+  event:
+    - push
+
 steps:
   checks:
     image: rust:1.88
@@ -6,9 +10,6 @@ steps:
       - cargo fmt --check
       - cargo clippy -- -D warnings
       - cargo build
-    when:
-      event:
-        - push
 
   integration-tests:
     image: rust:1.88
@@ -39,9 +40,6 @@ steps:
       - psql -h postgres -p 5432 -U test_user -d db_test -f init/postgres.sql
       - mysql -h mysql -u root -prootSecret42 db_test < init/mysql.sql
       - cargo test -v
-    when:
-      event:
-        - push
 
   mirror-github:
     image: alpine:3.20
