@@ -40,6 +40,7 @@ pub struct MySqlConfig {
 }
 impl MySqlConfig {
     /// Builds a mysql_async-compatible URL. Password included only when set.
+    #[allow(dead_code)]
     pub fn url(&self) -> String {
         match &self.password {
             Some(pw) => format!(

@@ -108,7 +108,9 @@ impl MySqlRepo {
             let columns: Vec<ColumnInfo> = qr
                 .columns_ref()
                 .iter()
-                .map(|c| ColumnInfo { name: c.name_str().to_string() })
+                .map(|c| ColumnInfo {
+                    name: c.name_str().to_string(),
+                })
                 .collect();
             let rows: Vec<mysql_async::Row> = qr.collect().await.map_err(DbError::MySql)?;
             let data = rows_to_data(rows);
@@ -127,7 +129,9 @@ impl MySqlRepo {
         let columns: Vec<ColumnInfo> = qr
             .columns_ref()
             .iter()
-            .map(|c| ColumnInfo { name: c.name_str().to_string() })
+            .map(|c| ColumnInfo {
+                name: c.name_str().to_string(),
+            })
             .collect();
         let rows: Vec<mysql_async::Row> = qr.collect().await.map_err(DbError::MySql)?;
 
@@ -229,7 +233,9 @@ impl Database for MySqlRepo {
         let columns: Vec<ColumnInfo> = probe
             .columns_ref()
             .iter()
-            .map(|c| ColumnInfo { name: c.name_str().to_string() })
+            .map(|c| ColumnInfo {
+                name: c.name_str().to_string(),
+            })
             .collect();
         probe.drop_result().await.map_err(DbError::MySql)?;
 
@@ -288,12 +294,8 @@ impl Database for MySqlRepo {
                 data_type: r.take::<String, _>(1).unwrap_or_default(),
                 is_nullable: r.take::<String, _>(2).unwrap_or_default(),
                 constraint: parse_constraint(
-                    r.take::<Option<String>, _>(3)
-                        .flatten()
-                        .as_deref(),
-                    r.take::<Option<String>, _>(4)
-                        .flatten()
-                        .as_deref(),
+                    r.take::<Option<String>, _>(3).flatten().as_deref(),
+                    r.take::<Option<String>, _>(4).flatten().as_deref(),
                 ),
                 default_value: r.take::<Option<String>, _>(5).flatten(),
             })
@@ -531,7 +533,9 @@ mod test {
     #[tokio::test]
     async fn execute_sql_invalid_returns_error() {
         let repo = MySqlRepo::new(test_config()).await.unwrap();
-        let result = repo.execute_sql("SELECT * FROM nonexistent_table_xyz").await;
+        let result = repo
+            .execute_sql("SELECT * FROM nonexistent_table_xyz")
+            .await;
         assert!(result.is_err());
     }
 
@@ -583,7 +587,10 @@ mod test {
             .execute_sql_with_options(
                 "SELECT 1 AS num, 'test' AS str",
                 Some(SqlExecuteOptions {
-                    page: Some(SqlPage { limit: 10, offset: 0 }),
+                    page: Some(SqlPage {
+                        limit: 10,
+                        offset: 0,
+                    }),
                 }),
             )
             .await

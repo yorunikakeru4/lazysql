@@ -35,6 +35,7 @@ pub enum DbClient {
     /// PostgreSQL client implementation.
     Postgres(PostgresRepo),
     /// MySQL client implementation.
+    #[allow(dead_code)]
     MySql(MySqlRepo),
 }
 impl DbClient {
