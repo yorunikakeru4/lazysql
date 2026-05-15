@@ -52,7 +52,7 @@ steps:
       - ssh-keyscan github.com >> ~/.ssh/known_hosts
       - git remote add github git@github.com:yorunikakeru4/lazysql.git || git remote set-url github git@github.com:yorunikakeru4/lazysql.git
       - git fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags
-      - git push github refs/remotes/origin/main:refs/heads/main
+      - git push --force-with-lease github refs/remotes/origin/main:refs/heads/main
       - git push github --tags
     when:
       event:
