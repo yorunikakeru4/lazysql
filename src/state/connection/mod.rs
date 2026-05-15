@@ -42,6 +42,19 @@ impl From<&ConnectConfig> for ConnectionMeta {
                 user: cfg.user.clone(),
                 driver: "postgres".into(),
             },
+            ConnectConfig::MySql(cfg) => ConnectionMeta {
+                name: cfg.name.clone().unwrap_or_else(|| {
+                    let host = &cfg.host;
+                    let port = cfg.port;
+                    let db_name = &cfg.db_name;
+                    format!("{host}:{port}/{db_name}")
+                }),
+                host: cfg.host.clone(),
+                port: cfg.port,
+                db_name: cfg.db_name.clone(),
+                user: cfg.user.clone(),
+                driver: "mysql".into(),
+            },
         }
     }
 }

@@ -1,5 +1,4 @@
 use crate::config::ConnectConfig;
-use crate::config::ConnectConfig::Postgres;
 use crate::db::repo::db_repo::{DbClient, DbError};
 use crate::db::repo::sql_repo::{
     Database, FetchRowsResult, SqlExecuteOptions, SqlExecuteResult, SqlPage, Table, TableDetails,
@@ -282,26 +281,23 @@ impl AppState {
             self.connect.error = Some(msg.clone());
             return Err(DbError::NotFound(msg));
         }
-        match self.connections_config[idx].clone() {
-            conn @ Postgres(_) => {
-                match tokio::time::timeout(CONNECTION_STATUS_TIMEOUT, DbClient::new(conn)).await {
-                    Err(_) => {
-                        let e = DbError::ConnectionTimeout(CONNECTION_STATUS_TIMEOUT);
-                        self.connect.error = Some(e.to_string());
-                        self.set_connection_status(idx, ConnectionStatus::Offline);
-                        Err(e)
-                    }
-                    Ok(Ok(client)) => {
-                        self.current_db = Some(client);
-                        self.set_connection_status(idx, ConnectionStatus::Online);
-                        Ok(())
-                    }
-                    Ok(Err(e)) => {
-                        self.connect.error = Some(e.to_string());
-                        self.set_connection_status(idx, ConnectionStatus::Offline);
-                        Err(e)
-                    }
-                }
+        let conn = self.connections_config[idx].clone();
+        match tokio::time::timeout(CONNECTION_STATUS_TIMEOUT, DbClient::new(conn)).await {
+            Err(_) => {
+                let e = DbError::ConnectionTimeout(CONNECTION_STATUS_TIMEOUT);
+                self.connect.error = Some(e.to_string());
+                self.set_connection_status(idx, ConnectionStatus::Offline);
+                Err(e)
+            }
+            Ok(Ok(client)) => {
+                self.current_db = Some(client);
+                self.set_connection_status(idx, ConnectionStatus::Online);
+                Ok(())
+            }
+            Ok(Err(e)) => {
+                self.connect.error = Some(e.to_string());
+                self.set_connection_status(idx, ConnectionStatus::Offline);
+                Err(e)
             }
         }
     }
@@ -541,6 +537,9 @@ pub(crate) fn format_sql_error(error: &DbError) -> String {
             let sqlstate = db_error.code().code();
             lines.push(format!("SQLSTATE: {sqlstate}"));
             lines.join("\n")
+        }
+        DbError::MySql(error) => {
+            format!("SQL error: {error}")
         }
         DbError::NotFound(message) => format!("SQL error: {message}"),
         DbError::ConnectionTimeout(timeout) => {

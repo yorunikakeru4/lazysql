@@ -38,6 +38,9 @@ impl DbClient {
                 let repo = PostgresRepo::new(cfg).await?;
                 Ok(DbClient::Postgres(repo))
             }
+            ConnectConfig::MySql(_) => {
+                todo!("MySQL support not yet implemented")
+            }
         }
     }
 }
