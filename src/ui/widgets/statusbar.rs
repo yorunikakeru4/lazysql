@@ -1,5 +1,5 @@
 use crate::state::mode::AppMode;
-use crate::ui::theme;
+use crate::themes::palette::ThemeColors;
 use chrono::Local;
 use ratatui::{
     Frame,
@@ -10,34 +10,41 @@ use ratatui::{
 };
 
 /// Renders the bottom status bar: mode pill · context · hints · clock.
-pub(crate) fn render(frame: &mut Frame, area: Rect, mode: &AppMode, context: &str, hints: &str) {
+pub(crate) fn render(
+    frame: &mut Frame,
+    area: Rect,
+    mode: &AppMode,
+    colors: &ThemeColors,
+    context: &str,
+    hints: &str,
+) {
     let (pill_label, pill_bg) = match mode {
-        AppMode::Normal => (" NORMAL ", theme::AQUA),
-        AppMode::Insert => (" INSERT ", theme::ORANGE),
-        AppMode::Search => (" SEARCH ", theme::YELLOW),
-        AppMode::Command => (" SQL ", theme::YELLOW),
-        AppMode::Result => (" RESULT ", theme::BLUE),
-        AppMode::Help => (" HELP ", theme::ORANGE),
+        AppMode::Normal => (" NORMAL ", colors.aqua),
+        AppMode::Insert => (" INSERT ", colors.orange),
+        AppMode::Search => (" SEARCH ", colors.yellow),
+        AppMode::Command => (" SQL ", colors.yellow),
+        AppMode::Result => (" RESULT ", colors.blue),
+        AppMode::Help => (" HELP ", colors.orange),
     };
 
     let now = Local::now().format("%H:%M:%S").to_string();
 
     let mut spans = vec![
-        Span::styled(pill_label, Style::new().bg(pill_bg).fg(theme::BG0).bold()),
+        Span::styled(pill_label, Style::new().bg(pill_bg).fg(colors.bg0).bold()),
         Span::raw("  "),
-        Span::styled(context, Style::new().fg(theme::BLUE).bold()),
+        Span::styled(context, Style::new().fg(colors.blue).bold()),
         Span::raw("   "),
     ];
-    spans.extend(hint_spans(hints));
+    spans.extend(hint_spans(hints, colors));
     spans.push(Span::styled(
         format!(" {now} "),
-        Style::new().fg(theme::FG0),
+        Style::new().fg(colors.fg0),
     ));
 
     frame.render_widget(Paragraph::new(Line::from(spans)).style(Style::new()), area);
 }
 
-fn hint_spans(hints: &str) -> Vec<Span<'static>> {
+fn hint_spans(hints: &str, colors: &ThemeColors) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     for (i, hint) in hints
         .split("  ")
@@ -45,20 +52,20 @@ fn hint_spans(hints: &str) -> Vec<Span<'static>> {
         .enumerate()
     {
         if i > 0 {
-            spans.push(Span::styled("  ", Style::new().fg(theme::FG4)));
+            spans.push(Span::styled("  ", Style::new().fg(colors.fg4)));
         }
         let Some((key, action)) = hint.split_once(':') else {
-            spans.push(Span::styled(hint.to_string(), Style::new().fg(theme::FG4)));
+            spans.push(Span::styled(hint.to_string(), Style::new().fg(colors.fg4)));
             continue;
         };
         spans.push(Span::styled(
             key.to_string(),
-            Style::new().fg(theme::YELLOW),
+            Style::new().fg(colors.yellow),
         ));
-        spans.push(Span::styled(":", Style::new().fg(theme::FG4)));
+        spans.push(Span::styled(":", Style::new().fg(colors.fg4)));
         spans.push(Span::styled(
             action.to_string(),
-            Style::new().fg(theme::FG3),
+            Style::new().fg(colors.fg3),
         ));
     }
     spans
@@ -83,6 +90,7 @@ mod test {
     fn renders_lazysql_context_and_colored_hint_keys() {
         let backend = TestBackend::new(90, 1);
         let mut terminal = Terminal::new(backend).unwrap();
+        let colors = crate::themes::palette::gruvbox().colors;
 
         terminal
             .draw(|frame| {
@@ -90,6 +98,7 @@ mod test {
                     frame,
                     frame.area(),
                     &AppMode::Insert,
+                    &colors,
                     "lazysql — 0 connections",
                     "tab:next  shift-tab:back  ^s:save  ^t:test  esc:cancel",
                 );
@@ -105,7 +114,7 @@ mod test {
                 .buffer()
                 .content()
                 .iter()
-                .any(|cell| cell.symbol() == "t" && cell.fg == theme::YELLOW)
+                .any(|cell| cell.symbol() == "t" && cell.fg == colors.yellow)
         );
     }
 }

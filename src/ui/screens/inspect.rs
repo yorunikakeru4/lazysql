@@ -49,7 +49,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     let schema = &details.schema;
     let name = &details.name;
     let context = format!("{schema}.{name}");
-    widgets::hintbar::render(frame, chunks[0], HINTS);
+    widgets::hintbar::render(frame, chunks[0], &state.theme.colors, HINTS);
     render_body(frame, chunks[1], state);
     let status_idx = if show_search {
         widgets::search::render_search_bar(frame, chunks[2], state);
@@ -61,6 +61,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         frame,
         chunks[status_idx],
         &state.mode,
+        &state.theme.colors,
         &context,
         "r:rows  /:filter",
     );

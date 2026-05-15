@@ -45,7 +45,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         .map(|s| format!("database › {s}"))
         .unwrap_or_else(|| "database".into());
 
-    widgets::hintbar::render(frame, chunks[0], HINTS);
+    widgets::hintbar::render(frame, chunks[0], &state.theme.colors, HINTS);
     render_split(frame, chunks[1], state);
     let status_idx = if show_search {
         widgets::search::render_search_bar(frame, chunks[2], state);
@@ -57,6 +57,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         frame,
         chunks[status_idx],
         &state.mode,
+        &state.theme.colors,
         &context,
         "tab:switch  /:filter  ::sql",
     );

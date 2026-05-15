@@ -39,9 +39,16 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         col_name
     );
 
-    widgets::hintbar::render(frame, chunks[0], HINTS);
+    widgets::hintbar::render(frame, chunks[0], &state.theme.colors, HINTS);
     render_table(frame, chunks[1], state);
-    widgets::statusbar::render(frame, chunks[2], &state.mode, &context, &status_hints);
+    widgets::statusbar::render(
+        frame,
+        chunks[2],
+        &state.mode,
+        &state.theme.colors,
+        &context,
+        &status_hints,
+    );
 }
 
 fn render_table(frame: &mut Frame, area: Rect, state: &AppState) {

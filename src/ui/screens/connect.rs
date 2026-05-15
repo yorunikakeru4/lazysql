@@ -1,5 +1,6 @@
 use crate::state::app::AppState;
 use crate::state::connection::{ConnectionMeta, ConnectionStatus};
+use crate::themes::palette::ThemeColors;
 use crate::ui::{layout, theme, widgets};
 use ratatui::{
     Frame,
@@ -49,7 +50,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         })
         .split(area);
 
-        render_connections_header(frame, chunks[0], FORM_HINTS);
+        render_connections_header(frame, chunks[0], &state.theme.colors, FORM_HINTS);
         let panes = Layout::horizontal([Constraint::Percentage(52), Constraint::Percentage(48)])
             .split(chunks[1]);
         render_connection_list(frame, panes[0], state);
@@ -66,6 +67,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
             frame,
             chunks[status_idx],
             &state.mode,
+            &state.theme.colors,
             &format!("lazysql — {connection_count} connections"),
             "tab:next  shift-tab:back  ^s:save  ^t:test  esc:cancel",
         );
@@ -90,7 +92,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     })
     .split(area);
 
-    render_connections_header(frame, chunks[0], CONNECT_HINTS);
+    render_connections_header(frame, chunks[0], &state.theme.colors, CONNECT_HINTS);
     render_connection_list(frame, chunks[1], state);
     let details_idx = if show_search {
         widgets::search::render_search_bar(frame, chunks[2], state);
@@ -109,12 +111,18 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         frame,
         chunks[details_idx + 1],
         &state.mode,
+        &state.theme.colors,
         &format!("lazysql — {connection_count} connections"),
         hints,
     );
 }
 
-fn render_connections_header(frame: &mut Frame, area: Rect, hints: &[(&str, &str)]) {
+fn render_connections_header(
+    frame: &mut Frame,
+    area: Rect,
+    colors: &ThemeColors,
+    hints: &[(&str, &str)],
+) {
     let title = Line::from(vec![
         Span::styled(" lazysql ", Style::new().fg(theme::BLUE).bold()),
         Span::styled(env!("CARGO_PKG_VERSION"), Style::new().fg(theme::FG3)),
@@ -129,7 +137,7 @@ fn render_connections_header(frame: &mut Frame, area: Rect, hints: &[(&str, &str
         .border_style(Style::new().fg(theme::BLUE));
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    widgets::hintbar::render(frame, inner, hints);
+    widgets::hintbar::render(frame, inner, colors, hints);
 }
 
 fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {

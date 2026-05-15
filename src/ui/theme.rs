@@ -1,5 +1,6 @@
 use ratatui::style::Color;
 
+#[allow(dead_code)]
 pub const BG0: Color = Color::Rgb(0x1d, 0x20, 0x21);
 pub const BG1: Color = Color::Rgb(0x28, 0x28, 0x28);
 pub const BG3: Color = Color::Rgb(0x3c, 0x38, 0x36);

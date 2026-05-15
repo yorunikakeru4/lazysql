@@ -31,7 +31,7 @@ pub fn render(frame: &mut Frame, state: &AppState, router: &Router) {
     if state.mode == state::mode::AppMode::Help
         && let Some(screen) = router.current()
     {
-        widgets::help::render(frame, screen);
+        widgets::help::render(frame, screen, &state.theme.colors);
     }
 
     widgets::theme_picker::render(frame, state);
