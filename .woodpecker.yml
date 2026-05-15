@@ -42,3 +42,31 @@ steps:
       event:
         - push
         - pull_request
+
+  mirror-github:
+    image: alpine:3.20
+    depends_on:
+      - integration-tests
+    environment:
+      GITHUB_MIRROR_SSH_KEY:
+        from_secret: github_mirror_ssh_key
+    commands:
+      - apk add --no-cache git openssh-client
+      - mkdir -p ~/.ssh
+      - printf '%s\n' "$GITHUB_MIRROR_SSH_KEY" > ~/.ssh/id_ed25519
+      - chmod 600 ~/.ssh/id_ed25519
+      - ssh-keyscan github.com >> ~/.ssh/known_hosts
+      - git remote add github git@github.com:yorunikakeru4/lazysql.git || git remote set-url github git@github.com:yorunikakeru4/lazysql.git
+      - git fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags
+      - |
+        set -euo pipefail
+        for branch in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin); do
+          [ "$branch" = "HEAD" ] && continue
+          git push github "refs/remotes/origin/$branch:refs/heads/$branch"
+        done
+      - git push github --tags
+    when:
+      event:
+        - push
+      branch:
+        - main
