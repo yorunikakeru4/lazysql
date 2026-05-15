@@ -2,6 +2,7 @@ mod config;
 mod db;
 mod handlers;
 mod state;
+mod themes;
 mod ui;
 
 use config::storage::ConfigStorage;
