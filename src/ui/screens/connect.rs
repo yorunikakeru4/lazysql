@@ -134,6 +134,7 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
         Cell::from(" #").style(Style::new().fg(theme::FG4)),
         Cell::from("NAME").style(Style::new().fg(theme::FG4).bold()),
         Cell::from("HOST").style(Style::new().fg(theme::FG4).bold()),
+        Cell::from("DRIVER").style(Style::new().fg(theme::FG4).bold()),
         Cell::from("DATABASE").style(Style::new().fg(theme::FG4).bold()),
         Cell::from("STATUS").style(Style::new().fg(theme::FG4).bold()),
     ]);
@@ -150,6 +151,7 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
                 Cell::from(format!(" {row_number}")).style(Style::new().fg(theme::FG4)),
                 Cell::from(m.name.clone()).style(Style::new().fg(theme::FG0)),
                 Cell::from(format!("{host}:{port}")).style(Style::new().fg(theme::FG3)),
+                Cell::from(m.driver.clone()).style(Style::new().fg(theme::BLUE)),
                 Cell::from(m.db_name.clone()).style(Style::new().fg(theme::FG3)),
                 status_cell,
             ])
@@ -160,6 +162,7 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
         Constraint::Length(4),
         Constraint::Fill(2),
         Constraint::Fill(3),
+        Constraint::Length(10),
         Constraint::Fill(2),
         Constraint::Length(12),
     ];
