@@ -1,0 +1,17 @@
+name = "tokyo-night"
+
+[colors]
+bg0    = "#16161e"
+bg1    = "#1a1b26"
+bg3    = "#24283b"
+bg_sel = "#283457"
+fg0    = "#c0caf5"
+fg3    = "#565f89"
+fg4    = "#3b4261"
+red    = "#f7768e"
+green  = "#9ece6a"
+yellow = "#e0af68"
+blue   = "#7aa2f7"
+aqua   = "#2ac3de"
+orange = "#ff9e64"
+purple = "#bb9af7"

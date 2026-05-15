@@ -148,7 +148,12 @@ fn theme_file_content(selected: &str) -> String {
 # Built-in themes
 # Set `theme` to one of the built-in theme names.
 # theme = "gruvbox"
+# theme = "gruvbox-material"
+# theme = "gruvbox-baby"
+# theme = "everforest"
 # theme = "dracula"
+# theme = "tokyo-night"
+# theme = "catppuccin-mocha"
 
 # Full custom theme example
 # Remove the `theme` line above and uncomment this block to use an inline theme.
@@ -220,7 +225,12 @@ mod test {
         assert!(content.starts_with("theme = \"gruvbox\""));
         assert!(content.contains("# Built-in themes"));
         assert!(content.contains("# theme = \"gruvbox\""));
+        assert!(content.contains("# theme = \"gruvbox-material\""));
+        assert!(content.contains("# theme = \"gruvbox-baby\""));
+        assert!(content.contains("# theme = \"everforest\""));
         assert!(content.contains("# theme = \"dracula\""));
+        assert!(content.contains("# theme = \"tokyo-night\""));
+        assert!(content.contains("# theme = \"catppuccin-mocha\""));
         assert!(content.contains("# Full custom theme example"));
         assert!(content.contains("# [colors]"));
     }
