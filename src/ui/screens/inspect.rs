@@ -46,7 +46,9 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         return;
     };
 
-    let context = format!("{}.{}", details.schema, details.name);
+    let schema = &details.schema;
+    let name = &details.name;
+    let context = format!("{schema}.{name}");
     widgets::hintbar::render(frame, chunks[0], HINTS);
     render_body(frame, chunks[1], state);
     let status_idx = if show_search {
@@ -79,7 +81,7 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
     // Header line
     let rows_str = details
         .row_count
-        .map(|n| format!("{} rows", n))
+        .map(|n| format!("{n} rows"))
         .unwrap_or_else(|| "? rows".into());
     let size_str = details.size_pretty.clone().unwrap_or_else(|| "?".into());
     let header_text = format!(
@@ -127,7 +129,7 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
                     Cell::from("UNIQUE").style(Style::new().fg(theme::YELLOW))
                 }
                 Some(ConstraintType::ForeignKey(t)) => {
-                    Cell::from(format!("FK → {}", t)).style(Style::new().fg(theme::BLUE))
+                    Cell::from(format!("FK → {t}")).style(Style::new().fg(theme::BLUE))
                 }
                 None => Cell::from("—").style(Style::new().fg(theme::FG4)),
             };
@@ -179,7 +181,11 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
         details
             .fk_refs
             .iter()
-            .map(|fk: &FkRef| format!("{}.{}", fk.from_table, fk.column))
+            .map(|fk: &FkRef| {
+                let table = &fk.from_table;
+                let column = &fk.column;
+                format!("{table}.{column}")
+            })
             .collect::<Vec<_>>()
             .join("  ")
     };

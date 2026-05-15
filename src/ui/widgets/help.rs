@@ -93,13 +93,14 @@ pub(crate) fn render(frame: &mut Frame, screen: &Screen) {
     let mut lines: Vec<Line> = vec![Line::from("")];
 
     for section in sections {
+        let title = section.title;
         lines.push(Line::from(vec![Span::styled(
-            format!("  {}", section.title),
+            format!("  {title}"),
             Style::new().fg(theme::ORANGE).bold(),
         )]));
         for (key, action) in section.entries {
             lines.push(Line::from(vec![
-                Span::styled(format!("    {:10}", key), Style::new().fg(theme::YELLOW)),
+                Span::styled(format!("    {key:10}"), Style::new().fg(theme::YELLOW)),
                 Span::styled(*action, Style::new().fg(theme::FG3)),
             ]));
         }

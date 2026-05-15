@@ -525,22 +525,24 @@ pub(crate) fn format_sql_error(error: &DbError) -> String {
     match error {
         DbError::Postgres(error) => {
             let Some(db_error) = error.as_db_error() else {
-                return format!("SQL error: {}", error);
+                return format!("SQL error: {error}");
             };
-            let mut lines = vec![format!("SQL error: {}", db_error.message())];
+            let message = db_error.message();
+            let mut lines = vec![format!("SQL error: {message}")];
             if let Some(position) = db_error.position() {
-                lines.push(format!("Position: {:?}", position));
+                lines.push(format!("Position: {position:?}"));
             }
             if let Some(detail) = db_error.detail() {
-                lines.push(format!("Detail: {}", detail));
+                lines.push(format!("Detail: {detail}"));
             }
             if let Some(hint) = db_error.hint() {
-                lines.push(format!("Hint: {}", hint));
+                lines.push(format!("Hint: {hint}"));
             }
-            lines.push(format!("SQLSTATE: {}", db_error.code().code()));
+            let sqlstate = db_error.code().code();
+            lines.push(format!("SQLSTATE: {sqlstate}"));
             lines.join("\n")
         }
-        DbError::NotFound(message) => format!("SQL error: {}", message),
+        DbError::NotFound(message) => format!("SQL error: {message}"),
         DbError::ConnectionTimeout(timeout) => {
             format!(
                 "SQL error: connection timed out after {}s",

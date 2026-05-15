@@ -28,7 +28,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     let records = &state.records;
     let col_name = records.current_col_name().unwrap_or("—");
     let context = match &records.source {
-        Some(RecordsSource::Table { table, .. }) => format!("records · {}", table),
+        Some(RecordsSource::Table { table, .. }) => format!("records · {table}"),
         Some(RecordsSource::Query { .. }) => "query results".into(),
         None => "records".into(),
     };
@@ -132,7 +132,7 @@ fn render_expanded(frame: &mut Frame, area: Rect, state: &AppState) {
         let title_style = Style::new().fg(theme::FG4).bold();
         rows.push(
             Row::new(vec![
-                Cell::from(format!("-[ RECORD {} ]", record_num)),
+                Cell::from(format!("-[ RECORD {record_num} ]")),
                 Cell::from(""),
             ])
             .style(title_style),
@@ -196,7 +196,8 @@ fn truncate_cell(text: &str) -> String {
         .nth(MAX_CELL_LEN)
         .map(|(i, _)| i)
         .unwrap_or(text.len());
-    format!("{}…", &text[..boundary])
+    let truncated = &text[..boundary];
+    format!("{truncated}…")
 }
 
 #[cfg(test)]

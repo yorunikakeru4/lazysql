@@ -24,7 +24,7 @@ steps:
       PGPASSWORD: vBnA46MVSs
     commands:
       - |
-        set -euo pipefail
+        set -eu
         apt-get update
         apt-get install -y --no-install-recommends \
           postgresql-client

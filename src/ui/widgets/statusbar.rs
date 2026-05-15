@@ -28,7 +28,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, mode: &AppMode, context: &st
         Span::styled(context, Style::new().fg(theme::FG3)),
         Span::raw("   "),
         Span::styled(hints, Style::new().fg(theme::FG4)),
-        Span::styled(format!(" {} ", now), Style::new().fg(theme::FG0)),
+        Span::styled(format!(" {now} "), Style::new().fg(theme::FG0)),
     ];
 
     frame.render_widget(

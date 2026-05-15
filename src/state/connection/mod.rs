@@ -30,10 +30,12 @@ impl From<&ConnectConfig> for ConnectionMeta {
     fn from(c: &ConnectConfig) -> Self {
         match c {
             ConnectConfig::Postgres(cfg) => ConnectionMeta {
-                name: cfg
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| format!("{}:{}/{}", cfg.host, cfg.port, cfg.db_name)),
+                name: cfg.name.clone().unwrap_or_else(|| {
+                    let host = &cfg.host;
+                    let port = cfg.port;
+                    let db_name = &cfg.db_name;
+                    format!("{host}:{port}/{db_name}")
+                }),
                 host: cfg.host.clone(),
                 port: cfg.port,
                 db_name: cfg.db_name.clone(),

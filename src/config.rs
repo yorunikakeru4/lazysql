@@ -24,7 +24,7 @@ impl PostgresConfig {
             self.host, self.user, self.db_name, self.port
         );
         match &self.password {
-            Some(pw) => format!("{} password={}", base, pw),
+            Some(pw) => format!("{base} password={pw}"),
             None => base,
         }
     }

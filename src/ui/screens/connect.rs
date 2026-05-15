@@ -52,11 +52,12 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         2
     };
     render_details_panel(frame, chunks[details_idx], state);
+    let connection_count = state.connections_config.len();
     widgets::statusbar::render(
         frame,
         chunks[details_idx + 1],
         &state.mode,
-        &format!("dbx — {} connections", state.connections_config.len()),
+        &format!("dbx — {connection_count} connections"),
         "j/k:move  /:filter  a:add  ↵:connect",
     );
 }
@@ -81,10 +82,13 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
         .enumerate()
         .map(|(visible_i, (index, m))| {
             let status_cell = render_status_cell(state.connection_status(*index));
+            let row_number = visible_i + 1;
+            let host = &m.host;
+            let port = m.port;
             Row::new(vec![
-                Cell::from(format!(" {}", visible_i + 1)).style(Style::new().fg(theme::FG4)),
+                Cell::from(format!(" {row_number}")).style(Style::new().fg(theme::FG4)),
                 Cell::from(m.name.clone()).style(Style::new().fg(theme::FG0)),
-                Cell::from(format!("{}:{}", m.host, m.port)).style(Style::new().fg(theme::FG3)),
+                Cell::from(format!("{host}:{port}")).style(Style::new().fg(theme::FG3)),
                 Cell::from(m.db_name.clone()).style(Style::new().fg(theme::FG3)),
                 status_cell,
             ])
@@ -102,13 +106,15 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
     let count_str = if state.connections_config.is_empty() {
         "0/0".to_string()
     } else if metas.is_empty() {
-        format!("0/{}", state.connections_config.len())
+        let total = state.connections_config.len();
+        format!("0/{total}")
     } else {
         let selected = state
             .selected_filtered_connection_position()
             .map(|i| i + 1)
             .unwrap_or(0);
-        format!("{}/{}", selected, metas.len())
+        let total = metas.len();
+        format!("{selected}/{total}")
     };
 
     let mut table_state =
@@ -117,7 +123,7 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
         .header(header)
         .block(
             Block::bordered()
-                .title(format!(" Saved Connections ─── {} ", count_str))
+                .title(format!(" Saved Connections ─── {count_str} "))
                 .title_style(Style::new().fg(theme::BLUE).bold())
                 .border_style(Style::new().fg(theme::BLUE)),
         )
@@ -160,7 +166,7 @@ pub(crate) fn render_connect_error_popup(frame: &mut Frame, state: &AppState) {
     let popup_area = layout::centered_rect(60, 7, frame.area());
     frame.render_widget(Clear, popup_area);
 
-    let paragraph = Paragraph::new(format!("{}\n\nPress Enter or Esc to dismiss", err)).block(
+    let paragraph = Paragraph::new(format!("{err}\n\nPress Enter or Esc to dismiss")).block(
         Block::bordered()
             .title(" Connection Error ")
             .style(Style::default().fg(Color::Red)),
@@ -180,6 +186,8 @@ fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
         .and_then(|_| metas.get(state.connect.selected));
 
     let content: Vec<Line> = if let Some(m) = selected {
+        let user = &m.user;
+        let host = &m.host;
         vec![
             Line::from(vec![
                 Span::styled("  driver  ", Style::new().fg(theme::FG4)),
@@ -187,10 +195,7 @@ fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
             ]),
             Line::from(vec![
                 Span::styled("  user    ", Style::new().fg(theme::FG4)),
-                Span::styled(
-                    format!("{}@{}", m.user, m.host),
-                    Style::new().fg(theme::PURPLE),
-                ),
+                Span::styled(format!("{user}@{host}"), Style::new().fg(theme::PURPLE)),
                 Span::styled("   ·   port  ", Style::new().fg(theme::FG4)),
                 Span::styled(m.port.to_string(), Style::new().fg(theme::FG0)),
             ]),
@@ -207,7 +212,10 @@ fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
     };
 
     let title = selected
-        .map(|m| format!(" Details · {} ", m.name))
+        .map(|m| {
+            let name = &m.name;
+            format!(" Details · {name} ")
+        })
         .unwrap_or_else(|| " Details ".into());
 
     frame.render_widget(
