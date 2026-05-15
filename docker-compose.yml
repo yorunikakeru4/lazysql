@@ -12,3 +12,17 @@ services:
       - "5439:5432"
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  mysql_test:
+    image: docker.io/library/mysql:8.4
+    container_name: mysql_test
+    restart: always
+    environment:
+      MYSQL_USER: test_user
+      MYSQL_PASSWORD: xK9mP2wQr7
+      MYSQL_DATABASE: db_test
+      MYSQL_ROOT_PASSWORD: rootSecret42
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./init_mysql.sql:/docker-entrypoint-initdb.d/init.sql
