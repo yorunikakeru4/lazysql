@@ -91,15 +91,14 @@ fn handle_theme_picker(
     match key.code {
         KeyCode::Esc => state.theme_picker.cancel(),
         KeyCode::Backspace => state.theme_picker.pop_query(),
-        KeyCode::Down | KeyCode::Char('j') => state.theme_picker.move_next(),
-        KeyCode::Up | KeyCode::Char('k') => state.theme_picker.move_prev(),
+        KeyCode::Down => state.theme_picker.move_next(),
+        KeyCode::Up => state.theme_picker.move_prev(),
         KeyCode::Enter => {
             if let Some(name) = state.theme_picker.selected_name().map(str::to_string)
                 && state.apply_theme_by_name(&name)
             {
                 state.theme_error = save_selected(&name).err().map(|error| error.to_string());
             }
-            state.theme_picker.cancel();
         }
         KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
             state.theme_picker.push_query(c);
@@ -398,8 +397,6 @@ async fn save_connection_form(state: &mut AppState, router: &mut Router) {
             if let Some(status) = state.connect.draft_status {
                 state.set_connection_status(state.connect.selected, status);
             }
-            #[cfg(not(test))]
-            let _ = ConfigStorage::save(&state.connections_config);
             if state.connect.draft_status.is_none() {
                 state
                     .refresh_connection_status(state.connect.selected)
