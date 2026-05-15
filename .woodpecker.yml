@@ -38,7 +38,7 @@ steps:
       - until pg_isready -h postgres -p 5432 -U test_user -d db_test; do sleep 1; done
       - until mysqladmin ping -h mysql -u test_user -pxK9mP2wQr7 --silent; do sleep 1; done
       - psql -h postgres -p 5432 -U test_user -d db_test -f init/postgres.sql
-      - mysql -h mysql -u test_user -pxK9mP2wQr7 db_test < init/mysql.sql
+      - mysql -h mysql -u root -prootSecret42 db_test < init/mysql.sql
       - cargo test -v
     when:
       event:
