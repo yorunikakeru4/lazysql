@@ -22,7 +22,7 @@ fn main() {
             let filename = path.file_name().unwrap().to_str().unwrap();
             let content = fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
-            writeln!(out, "    ({:?}, {:?}),", filename, content).unwrap();
+            writeln!(out, "    ({filename:?}, {content:?}),").unwrap();
         }
     }
 
