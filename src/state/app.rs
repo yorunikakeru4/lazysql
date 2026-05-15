@@ -5,6 +5,7 @@ use crate::db::repo::sql_repo::{
     TableRef,
 };
 use crate::state::connection::{ActivePane, ConnectState, ConnectionStatus, FormState};
+use crate::state::inspect::InspectState;
 use crate::state::mode::AppMode;
 use crate::state::records::{RecordsSource, RecordsState};
 use crate::state::search::SearchState;
@@ -35,6 +36,7 @@ pub struct AppState {
     pub search: SearchState,
     pub sql_input: SqlInputState,
     pub records: RecordsState,
+    pub inspect: InspectState,
 }
 
 impl AppState {
@@ -48,6 +50,7 @@ impl AppState {
             search: SearchState::default(),
             sql_input: SqlInputState::default(),
             records: RecordsState::default(),
+            inspect: InspectState::default(),
             schemas_raw: Vec::new(),
             schema_selected: 0,
             table_selected: 0,
@@ -267,6 +270,14 @@ impl AppState {
 
     /// Clamps `schema_selected` and `table_selected` to the lengths of the
     /// currently filtered lists. Call after every query change.
+    /// Number of fields visible in the Inspect screen after applying the search filter.
+    pub fn filtered_inspect_len(&self) -> usize {
+        self.table_details
+            .as_ref()
+            .map(|d| d.fields.iter().filter(|f| self.search.matches(&f.name)).count())
+            .unwrap_or(0)
+    }
+
     pub fn clamp_search_selections(&mut self) {
         let schema_len = self.filtered_schema_names().len();
         if schema_len == 0 {
@@ -351,6 +362,7 @@ impl AppState {
             return Err(DbError::NotFound("No active connection".to_string()));
         };
         self.table_details = Some(repo.get_table_details(schema, table).await?);
+        self.inspect.reset();
         Ok(())
     }
 
