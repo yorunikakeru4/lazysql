@@ -295,6 +295,9 @@ impl AppState {
         } else {
             self.table_selected = self.table_selected.min(table_len - 1);
         }
+
+        let inspect_len = self.filtered_inspect_len();
+        self.inspect.clamp(inspect_len);
     }
 
     /// The schema name at the current `schema_selected` index within the filtered list, if any.

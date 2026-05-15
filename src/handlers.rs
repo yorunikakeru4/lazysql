@@ -534,6 +534,7 @@ async fn handle_inspect(
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => {
             state.search.reset();
+            state.inspect.reset();
             state.mode = AppMode::Normal;
             router.pop();
         }
@@ -559,6 +560,15 @@ async fn handle_inspect(
                 }
             }
         }
+
+        KeyCode::Down | KeyCode::Char('j') => {
+            let len = state.filtered_inspect_len();
+            state.inspect.move_down(len);
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            state.inspect.move_up();
+        }
+
         _ => {}
     }
     Ok(())
