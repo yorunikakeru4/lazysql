@@ -274,7 +274,12 @@ impl AppState {
     pub fn filtered_inspect_len(&self) -> usize {
         self.table_details
             .as_ref()
-            .map(|d| d.fields.iter().filter(|f| self.search.matches(&f.name)).count())
+            .map(|d| {
+                d.fields
+                    .iter()
+                    .filter(|f| self.search.matches(&f.name))
+                    .count()
+            })
             .unwrap_or(0)
     }
 

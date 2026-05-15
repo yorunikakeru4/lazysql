@@ -179,7 +179,8 @@ fn render_expanded(frame: &mut Frame, area: Rect, state: &AppState) {
         .min(area.width.saturating_sub(8).max(1));
     let widths = [Constraint::Length(name_width), Constraint::Fill(1)];
     let num_cols = records.columns.len();
-    let flat_pos = records.selected_row
+    let flat_pos = records
+        .selected_row
         .saturating_mul(num_cols.saturating_add(2))
         .saturating_add(1)
         .saturating_add(records.selected_col);

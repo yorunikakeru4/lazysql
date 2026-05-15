@@ -83,5 +83,4 @@ services:
       MYSQL_PASSWORD: xK9mP2wQr7
       MYSQL_DATABASE: db_test
       MYSQL_ROOT_PASSWORD: rootSecret42
-    commands:
-      - --mysql-native-password=ON
+    command: --mysql-native-password=ON

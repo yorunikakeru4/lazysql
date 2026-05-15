@@ -1,10 +1,10 @@
 use crate::{
     config::ConnectConfig,
-    db::{mysql::init::MySqlRepo, postgres::init::PostgresRepo},
     db::repo::sql_repo::{
         Database, FetchRowsResult, SqlExecuteOptions, SqlExecuteResult, Table, TableDetails,
         TableRef,
     },
+    db::{mysql::init::MySqlRepo, postgres::init::PostgresRepo},
 };
 use std::time::Duration;
 
