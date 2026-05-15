@@ -43,7 +43,7 @@ steps:
       - integration-tests
     environment:
       GITHUB_MIRROR_SSH_KEY:
-        from_secret: github_mirror_ssh_key
+        from_secret: Lazysql
     commands:
       - apk add --no-cache git openssh-client
       - mkdir -p ~/.ssh
