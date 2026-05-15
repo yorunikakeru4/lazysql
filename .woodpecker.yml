@@ -52,12 +52,7 @@ steps:
       - ssh-keyscan github.com >> ~/.ssh/known_hosts
       - git remote add github git@github.com:yorunikakeru4/lazysql.git || git remote set-url github git@github.com:yorunikakeru4/lazysql.git
       - git fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags
-      - |
-        set -euo pipefail
-        for branch in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin); do
-          [ "$branch" = "HEAD" ] && continue
-          git push github "refs/remotes/origin/$branch:refs/heads/$branch"
-        done
+      - git push github refs/remotes/origin/main:refs/heads/main
       - git push github --tags
     when:
       event:
