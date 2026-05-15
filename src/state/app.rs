@@ -133,10 +133,9 @@ impl AppState {
 
     /// Tests the unsaved connection form draft and stores its reachability status.
     pub async fn test_form_connection(&mut self) {
-        match self.form.to_postgres_config() {
-            Ok(cfg) => {
+        match self.form.to_connect_config() {
+            Ok(connect) => {
                 self.form.error = None;
-                let connect = ConnectConfig::Postgres(cfg);
                 self.connect.draft_status = Some(Self::connection_status_for_config(connect).await);
             }
             Err(msg) => {

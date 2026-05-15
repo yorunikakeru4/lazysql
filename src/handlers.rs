@@ -2,7 +2,6 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, prelude::CrosstermBackend};
 use std::io::Stdout;
 
-use crate::config;
 use crate::config::storage::ConfigStorage;
 use crate::db;
 use crate::state::app::{AppState, format_sql_error};
@@ -234,6 +233,11 @@ fn handle_search(key: KeyEvent, state: &mut AppState, router: &Router) {
 // ─── Connect ─────────────────────────────────────────────────────────────────
 
 async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router) {
+    if state.connect.driver_picker_open {
+        handle_driver_picker(key, state);
+        return;
+    }
+
     if state.connect.form_open {
         handle_connection_form(key, state, router).await;
         return;
@@ -260,7 +264,7 @@ async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router
         }
         KeyCode::Char('a') => {
             state.form.reset();
-            state.connect.open_form();
+            state.connect.open_driver_picker();
             state.mode = AppMode::Insert;
         }
         KeyCode::Char('r') => {
@@ -270,10 +274,8 @@ async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router
             if state.selected_filtered_connection_position().is_none() {
                 return;
             }
-            if let Some(config::ConnectConfig::Postgres(cfg)) =
-                state.connections_config.get(state.connect.selected)
-            {
-                state.form = FormState::from_postgres_config(cfg, Some(state.connect.selected));
+            if let Some(cfg) = state.connections_config.get(state.connect.selected) {
+                state.form = FormState::from_connect_config(cfg, Some(state.connect.selected));
                 state.connect.open_form();
                 state.mode = AppMode::Insert;
             }
@@ -305,6 +307,35 @@ async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router
     }
 }
 
+fn handle_driver_picker(key: KeyEvent, state: &mut AppState) {
+    match key.code {
+        KeyCode::Esc => {
+            state.connect.close_driver_picker();
+            state.mode = AppMode::Normal;
+        }
+        KeyCode::Enter => {
+            let Some(driver) = state.connect.driver_picker.selected_driver() else {
+                return;
+            };
+            state.form = FormState::new_for_driver(driver.kind);
+            state.connect.close_driver_picker();
+            state.connect.open_form();
+            state.mode = AppMode::Insert;
+        }
+        KeyCode::Down | KeyCode::Char('j') => state.connect.driver_picker.select_next(),
+        KeyCode::Up | KeyCode::Char('k') => state.connect.driver_picker.select_prev(),
+        KeyCode::Backspace => {
+            state.connect.driver_picker.query.pop();
+            state.connect.driver_picker.clamp_selection();
+        }
+        KeyCode::Char(c) => {
+            state.connect.driver_picker.query.push(c);
+            state.connect.driver_picker.clamp_selection();
+        }
+        _ => {}
+    }
+}
+
 async fn handle_connection_form(key: KeyEvent, state: &mut AppState, router: &mut Router) {
     match key.code {
         KeyCode::Esc => {
@@ -326,6 +357,9 @@ async fn handle_connection_form(key: KeyEvent, state: &mut AppState, router: &mu
         KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             state.test_form_connection().await;
         }
+        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            state.connect.open_driver_picker();
+        }
         KeyCode::Char(c) => {
             state.form.current_value_mut().push(c);
             state.connect.draft_status = None;
@@ -335,18 +369,16 @@ async fn handle_connection_form(key: KeyEvent, state: &mut AppState, router: &mu
 }
 
 async fn save_connection_form(state: &mut AppState, router: &mut Router) {
-    match state.form.to_postgres_config() {
+    match state.form.to_connect_config() {
         Ok(cfg) => {
             state.form.error = None;
             if let Some(editing_index) = state.form.editing_index {
                 if editing_index < state.connections_config.len() {
-                    state.connections_config[editing_index] = config::ConnectConfig::Postgres(cfg);
+                    state.connections_config[editing_index] = cfg;
                     state.connect.selected = editing_index;
                 }
             } else {
-                state
-                    .connections_config
-                    .push(config::ConnectConfig::Postgres(cfg));
+                state.connections_config.push(cfg);
                 state.connect.selected = state.connections_config.len().saturating_sub(1);
             }
             state.sync_connection_statuses();
@@ -760,8 +792,35 @@ mod test {
         .await;
 
         assert_eq!(router.current(), Some(&Screen::Connect));
-        assert!(state.connect.form_open);
+        assert!(state.connect.driver_picker_open);
+        assert!(!state.connect.form_open);
         assert_eq!(state.mode, AppMode::Insert);
+    }
+
+    #[tokio::test]
+    async fn enter_in_driver_picker_opens_form_for_selected_driver() {
+        let mut state = AppState::new(vec![]);
+        let mut router = Router::new();
+        state.connect.open_driver_picker();
+        state.connect.driver_picker.query = "my".to_string();
+        state.connect.driver_picker.clamp_selection();
+        state.mode = AppMode::Insert;
+
+        handle_connect(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut state,
+            &mut router,
+        )
+        .await;
+
+        assert_eq!(router.current(), Some(&Screen::Connect));
+        assert!(!state.connect.driver_picker_open);
+        assert!(state.connect.form_open);
+        assert_eq!(
+            state.form.driver,
+            crate::state::connection::DriverKind::MySql
+        );
+        assert_eq!(state.form.values[2], "3306");
     }
 
     #[tokio::test]

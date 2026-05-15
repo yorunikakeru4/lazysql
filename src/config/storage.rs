@@ -91,14 +91,16 @@ impl ConfigStorage {
         let mut stored = StoredConfig::default();
         for c in connections {
             match c {
-                ConnectConfig::Postgres(cfg) => stored.connections.postgres.push(StoredConnection {
-                    name: cfg.name.clone(),
-                    host: cfg.host.clone(),
-                    user: cfg.user.clone(),
-                    db_name: cfg.db_name.clone(),
-                    port: cfg.port,
-                    password: cfg.password.clone(),
-                }),
+                ConnectConfig::Postgres(cfg) => {
+                    stored.connections.postgres.push(StoredConnection {
+                        name: cfg.name.clone(),
+                        host: cfg.host.clone(),
+                        user: cfg.user.clone(),
+                        db_name: cfg.db_name.clone(),
+                        port: cfg.port,
+                        password: cfg.password.clone(),
+                    })
+                }
                 ConnectConfig::MySql(cfg) => stored.connections.mysql.push(StoredConnection {
                     name: cfg.name.clone(),
                     host: cfg.host.clone(),
