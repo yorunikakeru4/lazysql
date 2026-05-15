@@ -1,6 +1,6 @@
 use crate::state::app::AppState;
 use crate::state::records::{MAX_CELL_LEN, RecordsSource};
-use crate::ui::{theme, widgets};
+use crate::ui::widgets;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
@@ -52,6 +52,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
 }
 
 fn render_table(frame: &mut Frame, area: Rect, state: &AppState) {
+    let colors = &state.theme.colors;
     let records = &state.records;
     if records.columns.is_empty() {
         frame.render_widget(Paragraph::new("No results.").block(Block::bordered()), area);
@@ -70,9 +71,9 @@ fn render_table(frame: &mut Frame, area: Rect, state: &AppState) {
             .enumerate()
             .map(|(i, c)| {
                 let style = if i == records.selected_col {
-                    Style::new().fg(theme::ORANGE).bold()
+                    Style::new().fg(colors.orange).bold()
                 } else {
-                    Style::new().fg(theme::FG4).bold()
+                    Style::new().fg(colors.fg4).bold()
                 };
                 Cell::from(c.name.as_str()).style(style)
             })
@@ -91,11 +92,11 @@ fn render_table(frame: &mut Frame, area: Rect, state: &AppState) {
                 .map(|(col_idx, val)| {
                     let truncated = truncate_cell(val.as_deref().unwrap_or("NULL"));
                     let style = if is_sel_row && col_idx == records.selected_col {
-                        Style::new().bg(theme::BG_SEL).fg(theme::ORANGE)
+                        Style::new().bg(colors.bg_sel).fg(colors.orange)
                     } else if is_sel_row {
-                        Style::new().bg(theme::BG_SEL).fg(theme::FG0)
+                        Style::new().bg(colors.bg_sel).fg(colors.fg0)
                     } else {
-                        Style::new().fg(theme::FG3)
+                        Style::new().fg(colors.fg3)
                     };
                     Cell::from(truncated).style(style)
                 })
@@ -123,20 +124,21 @@ fn render_table(frame: &mut Frame, area: Rect, state: &AppState) {
         .block(
             Block::bordered()
                 .title(title)
-                .border_style(Style::new().fg(theme::BG3)),
+                .border_style(Style::new().fg(colors.bg3)),
         )
-        .row_highlight_style(Style::new().bg(theme::BG_SEL));
+        .row_highlight_style(Style::new().bg(colors.bg_sel));
 
     frame.render_stateful_widget(table, area, &mut table_state);
 }
 
 fn render_expanded(frame: &mut Frame, area: Rect, state: &AppState) {
+    let colors = &state.theme.colors;
     let records = &state.records;
     let mut rows = Vec::new();
     for (row_idx, row) in records.rows.iter().enumerate() {
         let record_num = records.offset + row_idx as u64 + 1;
         let is_selected_record = row_idx == records.selected_row;
-        let title_style = Style::new().fg(theme::FG4).bold();
+        let title_style = Style::new().fg(colors.fg4).bold();
         rows.push(
             Row::new(vec![
                 Cell::from(format!("-[ RECORD {record_num} ]")),
@@ -152,14 +154,14 @@ fn render_expanded(frame: &mut Frame, area: Rect, state: &AppState) {
                 .unwrap_or("NULL");
             let is_selected_field = is_selected_record && col_idx == records.selected_col;
             let name_style = if is_selected_field {
-                Style::new().fg(theme::ORANGE).bold()
+                Style::new().fg(colors.orange).bold()
             } else {
-                Style::new().fg(theme::FG4)
+                Style::new().fg(colors.fg4)
             };
             let value_style = if is_selected_field {
-                Style::new().fg(theme::ORANGE)
+                Style::new().fg(colors.orange)
             } else {
-                Style::new().fg(theme::FG3)
+                Style::new().fg(colors.fg3)
             };
 
             rows.push(Row::new(vec![
@@ -188,7 +190,7 @@ fn render_expanded(frame: &mut Frame, area: Rect, state: &AppState) {
     let table = Table::new(rows, widths).block(
         Block::bordered()
             .title(title)
-            .border_style(Style::new().fg(theme::BG3)),
+            .border_style(Style::new().fg(colors.bg3)),
     );
 
     frame.render_widget(table, area);
@@ -280,7 +282,7 @@ mod test {
         let highlighted = terminal.backend().buffer().content().iter().any(|cell| {
             cell.symbol() == "N"
                 && cell.bg == ratatui::style::Color::Reset
-                && cell.fg == theme::ORANGE
+                && cell.fg == state.theme.colors.orange
         });
         assert!(highlighted);
     }

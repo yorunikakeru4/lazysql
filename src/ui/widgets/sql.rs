@@ -2,7 +2,7 @@ use crate::state::app::AppState;
 use crate::state::sql_input::SqlResult;
 use ratatui::{
     Frame,
-    style::{Color, Style},
+    style::Style,
     widgets::{Block, Clear, Paragraph},
 };
 
@@ -13,15 +13,16 @@ pub(crate) fn render_result_popup(frame: &mut Frame, state: &AppState) {
     let Some(result) = &state.sql_input.result else {
         return;
     };
+    let colors = &state.theme.colors;
 
     let (title, body, color) = match result {
         SqlResult::Success { rows_affected } => (
             " Success ",
             format!("Rows Affected: {rows_affected}"),
-            Color::Green,
+            colors.green,
         ),
-        SqlResult::Rows { count } => (" Success ", format!("Rows Returned: {count}"), Color::Green),
-        SqlResult::Error(msg) => (" Error ", msg.clone(), Color::Red),
+        SqlResult::Rows { count } => (" Success ", format!("Rows Returned: {count}"), colors.green),
+        SqlResult::Error(msg) => (" Error ", msg.clone(), colors.red),
     };
 
     let popup_area = centered_rect(50, 5, frame.area());
