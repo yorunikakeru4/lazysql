@@ -26,3 +26,4 @@ services:
       - "3307:3306"
     volumes:
       - ./init/mysql.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --mysql-native-password=ON

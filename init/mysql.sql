@@ -17,3 +17,8 @@ CREATE TABLE posts (
     created_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- mysql_async 0.34 does not support caching_sha2_password RSA exchange on first
+-- connect; switch test_user to mysql_native_password for local dev.
+ALTER USER 'test_user'@'%' IDENTIFIED WITH mysql_native_password BY 'xK9mP2wQr7';
+FLUSH PRIVILEGES;
