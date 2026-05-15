@@ -11,7 +11,6 @@ use ratatui::Frame;
 pub fn render(frame: &mut Frame, state: &AppState, router: &Router) {
     match router.current() {
         Some(Screen::Connect) => screens::connect::render(frame, state),
-        Some(Screen::AddConnection) => screens::add_connection::render(frame, state),
         Some(Screen::Database) => screens::database::render(frame, state),
         Some(Screen::Inspect) => screens::inspect::render(frame, state),
         Some(Screen::Records) => screens::records::render(frame, state),

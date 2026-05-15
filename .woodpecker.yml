@@ -51,8 +51,8 @@ steps:
       - chmod 600 ~/.ssh/id_ed25519
       - ssh-keyscan github.com >> ~/.ssh/known_hosts
       - git remote add github git@github.com:yorunikakeru4/lazysql.git || git remote set-url github git@github.com:yorunikakeru4/lazysql.git
-      - git fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags
-      - git push github refs/remotes/origin/main:refs/heads/main
+      - git fetch --unshallow origin '+refs/heads/*:refs/remotes/origin/*' --tags || git fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags
+      - git push --force github refs/remotes/origin/main:refs/heads/main
       - git push github --tags
     when:
       event:
