@@ -2,11 +2,13 @@ use crate::state::app::AppState;
 use ratatui::{
     Frame,
     layout::{Position, Rect},
+    style::Style,
     widgets::{Block, Paragraph},
 };
 
 /// Renders the search bar at `area` and shows the cursor when active.
 pub(crate) fn render_search_bar(frame: &mut Frame, area: Rect, state: &AppState) {
+    let colors = &state.theme.colors;
     let query = &state.search.query;
     let (title, text) = if state.search.active {
         (" / ", format!("{query}_"))
@@ -15,7 +17,12 @@ pub(crate) fn render_search_bar(frame: &mut Frame, area: Rect, state: &AppState)
     };
 
     frame.render_widget(
-        Paragraph::new(text.as_str()).block(Block::bordered().title(title)),
+        Paragraph::new(text.as_str()).block(
+            Block::bordered()
+                .title(title)
+                .title_style(Style::new().fg(colors.blue).bold())
+                .border_style(Style::new().fg(colors.bg3)),
+        ),
         area,
     );
 

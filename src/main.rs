@@ -2,6 +2,7 @@ mod config;
 mod db;
 mod handlers;
 mod state;
+mod themes;
 mod ui;
 
 use config::storage::ConfigStorage;
@@ -16,8 +17,7 @@ use state::{app::AppState, navigation::Router};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let connections = ConfigStorage::load();
-    let mut state = initialize_state(connections);
+    let mut state = initialize_state();
     state.refresh_connection_statuses().await;
 
     let mut router = Router::new();
@@ -36,8 +36,23 @@ async fn main() -> std::io::Result<()> {
 }
 
 /// Builds startup state without blocking on connection reachability probes.
-fn initialize_state(connections: Vec<config::ConnectConfig>) -> AppState {
-    AppState::new(connections)
+fn initialize_state() -> AppState {
+    let connections = ConfigStorage::load();
+
+    let (available_themes, builtin_error) =
+        match themes::builtin::load(std::path::Path::new("themes")) {
+            Ok(themes) => (themes, None),
+            Err(error) => (
+                vec![themes::builtin::fallback_theme()],
+                Some(error.to_string()),
+            ),
+        };
+
+    let loaded_theme = themes::storage::load(&available_themes);
+
+    let mut state = AppState::new(connections, loaded_theme.theme, available_themes);
+    state.theme_error = themes::storage::combine_errors(builtin_error, loaded_theme.error);
+    state
 }
 
 async fn run(
@@ -75,16 +90,7 @@ mod test {
 
     #[test]
     fn initialize_state_does_not_refresh_connection_statuses_on_startup() {
-        let state = initialize_state(vec![config::ConnectConfig::Postgres(
-            config::PostgresConfig {
-                name: Some("local".to_string()),
-                host: "127.0.0.1".to_string(),
-                user: "postgres".to_string(),
-                db_name: "postgres".to_string(),
-                port: 1,
-                password: None,
-            },
-        )]);
+        let state = initialize_state();
 
         assert_eq!(
             state.connection_status(0),

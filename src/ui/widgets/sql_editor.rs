@@ -1,5 +1,6 @@
 use crate::state::app::AppState;
-use crate::ui::{layout::centered_rect, theme};
+use crate::themes::palette::ThemeColors;
+use crate::ui::layout::centered_rect;
 use ratatui::{
     Frame,
     layout::Position,
@@ -18,6 +19,7 @@ use sqlparser::{
 
 /// Renders the floating multiline SQL editor overlay.
 pub(crate) fn render(frame: &mut Frame, state: &AppState) {
+    let colors = &state.theme.colors;
     let area = frame.area();
     let popup = centered_rect(70, 20, area);
     frame.render_widget(Clear, popup);
@@ -40,11 +42,11 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         .map(|(line_idx, line_text)| {
             let line_num = Span::styled(
                 format!("{:>3}  ", line_idx + 1),
-                Style::new().fg(theme::FG4),
+                Style::new().fg(colors.fg4),
             );
 
             let mut spans = vec![line_num];
-            spans.extend(highlight_sql(line_text));
+            spans.extend(highlight_sql(line_text, colors));
             Line::from(spans)
         })
         .collect();
@@ -54,9 +56,9 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
             .block(
                 Block::bordered()
                     .title(title)
-                    .border_style(Style::new().fg(theme::ORANGE)),
+                    .border_style(Style::new().fg(colors.orange)),
             )
-            .style(Style::new().bg(theme::BG1)),
+            .style(Style::new().bg(colors.bg1)),
         popup,
     );
 
@@ -67,13 +69,13 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
 }
 
 /// SQL syntax highlight for a single line segment.
-fn highlight_sql(text: &str) -> Vec<Span<'_>> {
+fn highlight_sql<'a>(text: &'a str, colors: &ThemeColors) -> Vec<Span<'a>> {
     let dialect = PostgreSqlDialect {};
     let Ok(tokens) = Tokenizer::new(&dialect, text)
         .with_unescape(false)
         .tokenize_with_location()
     else {
-        return highlight_sql_words(text);
+        return highlight_sql_words(text, colors);
     };
 
     let mut spans = Vec::new();
@@ -90,6 +92,7 @@ fn highlight_sql(text: &str) -> Vec<Span<'_>> {
                 &text[start..end],
                 token,
                 next_significant_token(&tokens, idx),
+                colors,
             ));
         }
         cursor = end;
@@ -101,7 +104,7 @@ fn highlight_sql(text: &str) -> Vec<Span<'_>> {
     spans
 }
 
-fn highlight_sql_words(text: &str) -> Vec<Span<'_>> {
+fn highlight_sql_words<'a>(text: &'a str, colors: &ThemeColors) -> Vec<Span<'a>> {
     let mut spans = Vec::new();
     let mut remaining = text;
     while !remaining.is_empty() {
@@ -112,7 +115,7 @@ fn highlight_sql_words(text: &str) -> Vec<Span<'_>> {
                 .unwrap_or(remaining.len());
             let word = &remaining[..end];
             if is_sql_keyword(word) {
-                spans.push(Span::styled(word, Style::new().fg(theme::PURPLE)));
+                spans.push(Span::styled(word, Style::new().fg(colors.purple)));
             } else {
                 spans.push(Span::raw(word));
             }
@@ -134,19 +137,21 @@ fn style_token<'a>(
     text: &'a str,
     token: &TokenWithSpan,
     next_token: Option<&TokenWithSpan>,
+    colors: &ThemeColors,
 ) -> Span<'a> {
-    let Some(style) = token_style(&token.token, next_token.map(|token| &token.token)) else {
+    let Some(style) = token_style(&token.token, next_token.map(|token| &token.token), colors)
+    else {
         return Span::raw(text);
     };
     Span::styled(text, style)
 }
 
-fn token_style(token: &Token, next_token: Option<&Token>) -> Option<Style> {
+fn token_style(token: &Token, next_token: Option<&Token>, colors: &ThemeColors) -> Option<Style> {
     match token {
         Token::Word(_) if matches!(next_token, Some(Token::LParen)) => {
-            Some(Style::new().fg(theme::AQUA))
+            Some(Style::new().fg(colors.aqua))
         }
-        Token::Word(word) => keyword_style(word.keyword),
+        Token::Word(word) => keyword_style(word.keyword, colors),
         Token::Number(..)
         | Token::SingleQuotedString(_)
         | Token::DoubleQuotedString(_)
@@ -166,7 +171,7 @@ fn token_style(token: &Token, next_token: Option<&Token>) -> Option<Style> {
         | Token::NationalQuoteDelimitedStringLiteral(_)
         | Token::EscapedStringLiteral(_)
         | Token::UnicodeStringLiteral(_)
-        | Token::HexStringLiteral(_) => Some(Style::new().fg(theme::GREEN)),
+        | Token::HexStringLiteral(_) => Some(Style::new().fg(colors.green)),
         Token::Eq
         | Token::Neq
         | Token::Lt
@@ -218,7 +223,7 @@ fn token_style(token: &Token, next_token: Option<&Token>) -> Option<Style> {
         | Token::Question
         | Token::QuestionAnd
         | Token::QuestionPipe
-        | Token::CustomBinaryOperator(_) => Some(Style::new().fg(theme::YELLOW)),
+        | Token::CustomBinaryOperator(_) => Some(Style::new().fg(colors.yellow)),
         _ => None,
     }
 }
@@ -255,15 +260,15 @@ fn is_sql_keyword(word: &str) -> bool {
     is_highlighted_keyword(word.keyword)
 }
 
-fn keyword_style(keyword: Keyword) -> Option<Style> {
+fn keyword_style(keyword: Keyword, colors: &ThemeColors) -> Option<Style> {
     if is_ddl_keyword(keyword) {
-        return Some(Style::new().fg(theme::ORANGE));
+        return Some(Style::new().fg(colors.orange));
     }
     if is_clause_keyword(keyword) {
-        return Some(Style::new().fg(theme::BLUE));
+        return Some(Style::new().fg(colors.blue));
     }
     if is_dml_keyword(keyword) || is_highlighted_keyword(keyword) {
-        return Some(Style::new().fg(theme::PURPLE));
+        return Some(Style::new().fg(colors.purple));
     }
     None
 }
@@ -377,15 +382,17 @@ mod test {
     use super::*;
 
     fn highlighted_text(text: &str) -> Vec<String> {
-        highlight_sql(text)
+        let colors = crate::themes::builtin::fallback_theme().colors;
+        highlight_sql(text, &colors)
             .into_iter()
-            .filter(|span| span.style.fg == Some(theme::PURPLE))
+            .filter(|span| span.style.fg == Some(colors.purple))
             .map(|span| span.content.into_owned())
             .collect()
     }
 
     fn text_with_color(text: &str, color: ratatui::style::Color) -> Vec<String> {
-        highlight_sql(text)
+        let colors = crate::themes::builtin::fallback_theme().colors;
+        highlight_sql(text, &colors)
             .into_iter()
             .filter(|span| span.style.fg == Some(color))
             .map(|span| span.content.into_owned())
@@ -409,37 +416,55 @@ mod test {
 
     #[test]
     fn highlights_ddl_keywords_with_ddl_color() {
+        let colors = crate::themes::builtin::fallback_theme().colors;
         assert_eq!(
-            text_with_color("CREATE TABLE users (id int)", theme::ORANGE),
+            text_with_color("CREATE TABLE users (id int)", colors.orange),
             vec!["CREATE", "TABLE"]
         );
     }
 
     #[test]
     fn highlights_clause_keywords_with_clause_color() {
+        let colors = crate::themes::builtin::fallback_theme().colors;
         assert_eq!(
-            text_with_color("SELECT id FROM users WHERE id = 1", theme::BLUE),
+            text_with_color("SELECT id FROM users WHERE id = 1", colors.blue),
             vec!["FROM", "WHERE"]
         );
     }
 
     #[test]
     fn highlights_function_calls_with_function_color() {
+        let colors = crate::themes::builtin::fallback_theme().colors;
         assert_eq!(
-            text_with_color("SELECT count(id), custom_fn(id) FROM users", theme::AQUA),
+            text_with_color("SELECT count(id), custom_fn(id) FROM users", colors.aqua),
             vec!["count", "custom_fn"]
         );
     }
 
     #[test]
     fn highlights_literals_and_operators_with_their_own_colors() {
+        let colors = crate::themes::builtin::fallback_theme().colors;
         assert_eq!(
-            text_with_color("SELECT id = 42 AND name = 'Ada'", theme::GREEN),
+            text_with_color("SELECT id = 42 AND name = 'Ada'", colors.green),
             vec!["42", "'Ada'"]
         );
         assert_eq!(
-            text_with_color("SELECT id = 42 AND name = 'Ada'", theme::YELLOW),
+            text_with_color("SELECT id = 42 AND name = 'Ada'", colors.yellow),
             vec!["=", "="]
         );
+    }
+
+    #[test]
+    fn highlights_sql_with_runtime_theme_colors() {
+        let mut theme = crate::themes::builtin::fallback_theme();
+        theme.colors.purple = ratatui::style::Color::Rgb(1, 2, 3);
+
+        let highlighted = highlight_sql("SELECT 1", &theme.colors)
+            .into_iter()
+            .filter(|span| span.style.fg == Some(theme.colors.purple))
+            .map(|span| span.content.into_owned())
+            .collect::<Vec<_>>();
+
+        assert_eq!(highlighted, vec!["SELECT"]);
     }
 }

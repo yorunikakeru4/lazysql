@@ -1,6 +1,7 @@
 use crate::state::app::AppState;
 use crate::state::connection::{ConnectionMeta, ConnectionStatus, DriverDefinition};
-use crate::ui::{layout, theme, widgets};
+use crate::themes::palette::ThemeColors;
+use crate::ui::{layout, widgets};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Position, Rect},
@@ -10,14 +11,22 @@ use ratatui::{
     widgets::{Block, Cell, Clear, Paragraph, Row, Table, TableState},
 };
 
-const HINTS: &[(&str, &str)] = &[
+const CONNECT_HINTS: &[(&str, &str)] = &[
     ("a", "add"),
     ("↵", "connect"),
     ("e", "edit"),
     ("d", "delete"),
     ("/", "search"),
+    ("^t", "theme"),
     ("?", "help"),
     ("q", "quit"),
+];
+
+const FORM_HINTS: &[(&str, &str)] = &[
+    ("tab", "next"),
+    ("^s", "save"),
+    ("^t", "test"),
+    ("esc", "cancel"),
 ];
 
 /// Renders the connection list screen.
@@ -41,7 +50,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         })
         .split(area);
 
-        render_connections_header(frame, chunks[0]);
+        render_connections_header(frame, chunks[0], &state.theme.colors, FORM_HINTS);
         let panes = Layout::horizontal([Constraint::Percentage(52), Constraint::Percentage(48)])
             .split(chunks[1]);
         render_connection_list(frame, panes[0], state);
@@ -58,6 +67,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
             frame,
             chunks[status_idx],
             &state.mode,
+            &state.theme.colors,
             &format!("lazysql — {connection_count} connections"),
             "tab:next  shift-tab:back  ^s:save  ^t:test  esc:cancel",
         );
@@ -82,7 +92,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     })
     .split(area);
 
-    render_connections_header(frame, chunks[0]);
+    render_connections_header(frame, chunks[0], &state.theme.colors, CONNECT_HINTS);
     render_connection_list(frame, chunks[1], state);
     let details_idx = if show_search {
         widgets::search::render_search_bar(frame, chunks[2], state);
@@ -92,12 +102,20 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     };
     render_details_panel(frame, chunks[details_idx], state);
     let connection_count = state.connections_config.len();
+    let hints = if state.theme_picker.open {
+        "type:filter  ↵:select  esc:cancel".to_string()
+    } else if let Some(error) = &state.theme_error {
+        format!("theme:{error}  j/k:move  /:search  a:add  ↵:connect  ^t:theme")
+    } else {
+        "j/k:move  /:search  a:add  ↵:connect  ^t:theme".to_string()
+    };
     widgets::statusbar::render(
         frame,
         chunks[details_idx + 1],
         &state.mode,
+        &state.theme.colors,
         &format!("lazysql — {connection_count} connections"),
-        "j/k:move  /:search  a:add  ↵:connect",
+        &hints,
     );
 
     if state.connect.driver_picker_open {
@@ -105,25 +123,31 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     }
 }
 
-fn render_connections_header(frame: &mut Frame, area: Rect) {
+fn render_connections_header(
+    frame: &mut Frame,
+    area: Rect,
+    colors: &ThemeColors,
+    hints: &[(&str, &str)],
+) {
     let title = Line::from(vec![
-        Span::styled(" lazysql ", Style::new().fg(theme::BLUE).bold()),
-        Span::styled(env!("CARGO_PKG_VERSION"), Style::new().fg(theme::FG3)),
+        Span::styled(" lazysql ", Style::new().fg(colors.blue).bold()),
+        Span::styled(env!("CARGO_PKG_VERSION"), Style::new().fg(colors.fg3)),
         Span::raw(" "),
     ]);
     let block = Block::bordered()
         .title(title)
         .title(
-            Line::styled(" Connections ", Style::new().fg(theme::BLUE).bold())
+            Line::styled(" Connections ", Style::new().fg(colors.blue).bold())
                 .alignment(Alignment::Right),
         )
-        .border_style(Style::new().fg(theme::BLUE));
+        .border_style(Style::new().fg(colors.blue));
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    widgets::hintbar::render(frame, inner, HINTS);
+    widgets::hintbar::render(frame, inner, colors, hints);
 }
 
 fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
+    let colors = &state.theme.colors;
     let filtered_indices = state.filtered_connection_indices();
     let metas: Vec<(usize, ConnectionMeta)> = filtered_indices
         .iter()
@@ -131,28 +155,28 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
         .collect();
 
     let header = Row::new(vec![
-        Cell::from(" #").style(Style::new().fg(theme::FG4)),
-        Cell::from("NAME").style(Style::new().fg(theme::FG4).bold()),
-        Cell::from("HOST").style(Style::new().fg(theme::FG4).bold()),
-        Cell::from("DRIVER").style(Style::new().fg(theme::FG4).bold()),
-        Cell::from("DATABASE").style(Style::new().fg(theme::FG4).bold()),
-        Cell::from("STATUS").style(Style::new().fg(theme::FG4).bold()),
+        Cell::from(" #").style(Style::new().fg(colors.fg4)),
+        Cell::from("NAME").style(Style::new().fg(colors.fg4).bold()),
+        Cell::from("HOST").style(Style::new().fg(colors.fg4).bold()),
+        Cell::from("DRIVER").style(Style::new().fg(colors.fg4).bold()),
+        Cell::from("DATABASE").style(Style::new().fg(colors.fg4).bold()),
+        Cell::from("STATUS").style(Style::new().fg(colors.fg4).bold()),
     ]);
 
     let rows: Vec<Row> = metas
         .iter()
         .enumerate()
         .map(|(visible_i, (index, m))| {
-            let status_cell = render_status_cell(state.connection_status(*index));
+            let status_cell = render_status_cell(state.connection_status(*index), colors);
             let row_number = visible_i + 1;
             let host = &m.host;
             let port = m.port;
             Row::new(vec![
-                Cell::from(format!(" {row_number}")).style(Style::new().fg(theme::FG4)),
-                Cell::from(m.name.clone()).style(Style::new().fg(theme::FG0)),
-                Cell::from(format!("{host}:{port}")).style(Style::new().fg(theme::FG3)),
-                Cell::from(m.driver.clone()).style(Style::new().fg(theme::BLUE)),
-                Cell::from(m.db_name.clone()).style(Style::new().fg(theme::FG3)),
+                Cell::from(format!(" {row_number}")).style(Style::new().fg(colors.fg4)),
+                Cell::from(m.name.clone()).style(Style::new().fg(colors.fg0)),
+                Cell::from(format!("{host}:{port}")).style(Style::new().fg(colors.fg3)),
+                Cell::from(m.driver.clone()).style(Style::new().fg(colors.blue)),
+                Cell::from(m.db_name.clone()).style(Style::new().fg(colors.fg3)),
                 status_cell,
             ])
         })
@@ -188,28 +212,28 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
         .block(
             Block::bordered()
                 .title(format!(" Saved Connections ─── {count_str} "))
-                .title_style(Style::new().fg(theme::BLUE).bold())
-                .border_style(Style::new().fg(theme::BLUE)),
+                .title_style(Style::new().fg(colors.blue).bold())
+                .border_style(Style::new().fg(colors.blue)),
         )
-        .row_highlight_style(selected_row_highlight_style())
+        .row_highlight_style(selected_row_highlight_style(colors))
         .highlight_symbol("▶ ");
 
     frame.render_stateful_widget(table, area, &mut table_state);
 }
 
-fn render_status_cell(status: ConnectionStatus) -> Cell<'static> {
-    let (color, label) = status_indicator(status);
+fn render_status_cell(status: ConnectionStatus, colors: &ThemeColors) -> Cell<'static> {
+    let (color, label) = status_indicator(status, colors);
     Cell::from(Line::from(vec![
         Span::styled(status_dot_symbol(), Style::new().fg(color)),
         Span::styled(label, Style::new().fg(color)),
     ]))
 }
 
-fn status_indicator(status: ConnectionStatus) -> (Color, &'static str) {
+fn status_indicator(status: ConnectionStatus, colors: &ThemeColors) -> (Color, &'static str) {
     match status {
-        ConnectionStatus::Unknown => (theme::FG4, " unknown"),
-        ConnectionStatus::Online => (theme::GREEN, " online"),
-        ConnectionStatus::Offline => (theme::RED, " offline"),
+        ConnectionStatus::Unknown => (colors.fg4, " unknown"),
+        ConnectionStatus::Online => (colors.green, " online"),
+        ConnectionStatus::Offline => (colors.red, " offline"),
     }
 }
 
@@ -217,11 +241,12 @@ fn status_dot_symbol() -> &'static str {
     "●"
 }
 
-fn selected_row_highlight_style() -> Style {
-    Style::new().bg(theme::BG_SEL)
+fn selected_row_highlight_style(colors: &ThemeColors) -> Style {
+    Style::new().bg(colors.bg_sel)
 }
 
 fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState) {
+    let colors = &state.theme.colors;
     let title = if state.form.is_editing() {
         format!(" Edit Connection · {} ", state.form.driver.label())
     } else {
@@ -229,8 +254,8 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
     };
     let block = Block::bordered()
         .title(title)
-        .title_style(Style::new().fg(theme::ORANGE).bold())
-        .border_style(Style::new().fg(theme::ORANGE));
+        .title_style(Style::new().fg(colors.orange).bold())
+        .border_style(Style::new().fg(colors.orange));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -264,14 +289,14 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
             state.form.values[i].clone()
         };
         let color = if i == state.form.focused {
-            theme::ORANGE
+            colors.orange
         } else {
-            theme::FG4
+            colors.fg4
         };
         frame.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled(format!("  {label:<19}"), Style::new().fg(color)),
-                Span::styled(value, Style::new().fg(theme::FG0)),
+                Span::styled(value, Style::new().fg(colors.fg0)),
             ])),
             field_rows[i + 1],
         );
@@ -281,10 +306,10 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
         .connect
         .draft_status
         .unwrap_or(ConnectionStatus::Unknown);
-    let (color, label) = status_indicator(status);
+    let (color, label) = status_indicator(status, colors);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("  status             ", Style::new().fg(theme::FG4)),
+            Span::styled("  status             ", Style::new().fg(colors.fg4)),
             Span::styled(status_dot_symbol(), Style::new().fg(color)),
             Span::styled(label, Style::new().fg(color)),
         ])),
@@ -294,8 +319,8 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
     if let Some(err) = &state.form.error {
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled(" ! ", Style::new().fg(theme::RED).bold()),
-                Span::styled(err.as_str(), Style::new().fg(theme::RED)),
+                Span::styled(" ! ", Style::new().fg(colors.red).bold()),
+                Span::styled(err.as_str(), Style::new().fg(colors.red)),
             ])),
             field_rows[8],
         );
@@ -304,11 +329,11 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::raw("  "),
-            Span::styled("[ Test ]", Style::new().fg(theme::BLUE).bold()),
+            Span::styled("[ Test ]", Style::new().fg(colors.blue).bold()),
             Span::raw("   "),
-            Span::styled("[ Save ]", Style::new().fg(theme::GREEN).bold()),
+            Span::styled("[ Save ]", Style::new().fg(colors.green).bold()),
             Span::raw("   "),
-            Span::styled("[ Cancel ]", Style::new().fg(theme::RED).bold()),
+            Span::styled("[ Cancel ]", Style::new().fg(colors.red).bold()),
         ])),
         field_rows[9],
     );
@@ -408,6 +433,7 @@ pub(crate) fn render_connect_error_popup(frame: &mut Frame, state: &AppState) {
     let Some(err) = &state.connect.error else {
         return;
     };
+    let colors = &state.theme.colors;
 
     let popup_area = layout::centered_rect(60, 7, frame.area());
     frame.render_widget(Clear, popup_area);
@@ -415,12 +441,13 @@ pub(crate) fn render_connect_error_popup(frame: &mut Frame, state: &AppState) {
     let paragraph = Paragraph::new(format!("{err}\n\nPress Enter or Esc to dismiss")).block(
         Block::bordered()
             .title(" Connection Error ")
-            .style(Style::default().fg(Color::Red)),
+            .style(Style::default().fg(colors.red)),
     );
     frame.render_widget(paragraph, popup_area);
 }
 
 fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
+    let colors = &state.theme.colors;
     let metas: Vec<ConnectionMeta> = state
         .connections_config
         .iter()
@@ -436,24 +463,24 @@ fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
         let host = &m.host;
         vec![
             Line::from(vec![
-                Span::styled("  driver  ", Style::new().fg(theme::FG4)),
-                Span::styled(&m.driver, Style::new().fg(theme::BLUE)),
+                Span::styled("  driver  ", Style::new().fg(colors.fg4)),
+                Span::styled(&m.driver, Style::new().fg(colors.blue)),
             ]),
             Line::from(vec![
-                Span::styled("  user    ", Style::new().fg(theme::FG4)),
-                Span::styled(format!("{user}@{host}"), Style::new().fg(theme::PURPLE)),
-                Span::styled("   ·   port  ", Style::new().fg(theme::FG4)),
-                Span::styled(m.port.to_string(), Style::new().fg(theme::FG0)),
+                Span::styled("  user    ", Style::new().fg(colors.fg4)),
+                Span::styled(format!("{user}@{host}"), Style::new().fg(colors.purple)),
+                Span::styled("   ·   port  ", Style::new().fg(colors.fg4)),
+                Span::styled(m.port.to_string(), Style::new().fg(colors.fg0)),
             ]),
             Line::from(vec![
-                Span::styled("  db      ", Style::new().fg(theme::FG4)),
-                Span::styled(&m.db_name, Style::new().fg(theme::FG0)),
+                Span::styled("  db      ", Style::new().fg(colors.fg4)),
+                Span::styled(&m.db_name, Style::new().fg(colors.fg0)),
             ]),
         ]
     } else {
         vec![Line::from(Span::styled(
             "  No connection selected",
-            Style::new().fg(theme::FG4),
+            Style::new().fg(colors.fg4),
         ))]
     };
 
@@ -468,8 +495,8 @@ fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
         Paragraph::new(content).block(
             Block::bordered()
                 .title(title)
-                .title_style(Style::new().fg(theme::BLUE).bold())
-                .border_style(Style::new().fg(theme::BLUE)),
+                .title_style(Style::new().fg(colors.blue).bold())
+                .border_style(Style::new().fg(colors.blue)),
         ),
         area,
     );
@@ -495,7 +522,7 @@ mod test {
     fn connect_error_popup_renders_error_message() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.error = Some("connection refused".to_string());
 
         terminal
@@ -509,7 +536,7 @@ mod test {
     fn inline_new_connection_panel_renders_next_to_saved_connections() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.form_open = true;
         state.form.values[1] = "127.0.0.1".to_string();
 
@@ -525,7 +552,7 @@ mod test {
     fn driver_picker_renders_filtered_drivers() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.open_driver_picker();
         state.connect.driver_picker.query = "my".to_string();
 
@@ -541,7 +568,7 @@ mod test {
     fn inline_connection_panel_renders_selected_driver() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.form_open = true;
         state.form = crate::state::connection::FormState::new_for_driver(
             crate::state::connection::DriverKind::MySql,
@@ -559,7 +586,7 @@ mod test {
     fn inline_connection_panel_renders_draft_offline_status() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.form_open = true;
         state.connect.draft_status = Some(ConnectionStatus::Offline);
 
@@ -572,7 +599,7 @@ mod test {
     fn inline_connection_panel_renders_unknown_status_by_default() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.form_open = true;
 
         terminal.draw(|frame| render(frame, &state)).unwrap();
@@ -584,7 +611,7 @@ mod test {
     fn connections_header_uses_lazysql_title_and_search_hint() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let state = AppState::new(vec![]);
+        let state = AppState::for_test(vec![]);
 
         terminal.draw(|frame| render(frame, &state)).unwrap();
 
@@ -592,15 +619,59 @@ mod test {
         assert!(text.contains("lazysql"));
         assert!(text.contains("Connections"));
         assert!(text.contains("/:search"));
+        assert!(text.contains("^t:theme"));
         assert!(!text.contains("r:refresh"));
         assert!(!text.contains("/:filter"));
+    }
+
+    #[test]
+    fn connection_form_omits_theme_header_hint() {
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::for_test(vec![]);
+        state.connect.form_open = true;
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        let text = buffer_text(&terminal);
+        assert!(!text.contains("^t:theme"));
+        assert!(text.contains("^t:test"));
+    }
+
+    #[test]
+    fn connection_status_hints_switch_when_theme_picker_is_open() {
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::for_test(vec![]);
+        state.theme_picker.open();
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        let text = buffer_text(&terminal);
+        assert!(text.contains("type:filter"));
+        assert!(text.contains("select"));
+        assert!(text.contains("esc:cancel"));
+    }
+
+    #[test]
+    fn connection_status_hints_show_theme_error_when_picker_is_closed() {
+        let backend = TestBackend::new(120, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::for_test(vec![]);
+        state.theme_error = Some("unknown theme: missing".to_string());
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        let text = buffer_text(&terminal);
+        assert!(text.contains("theme:unknown theme: missing"));
+        assert!(!text.contains("Select theme"));
     }
 
     #[test]
     fn inline_connection_actions_are_colored_by_action() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.form_open = true;
 
         terminal.draw(|frame| render(frame, &state)).unwrap();
@@ -610,19 +681,53 @@ mod test {
             buffer
                 .content()
                 .iter()
-                .any(|cell| cell.symbol() == "T" && cell.fg == theme::BLUE)
+                .any(|cell| cell.symbol() == "T" && cell.fg == state.theme.colors.blue)
         );
         assert!(
             buffer
                 .content()
                 .iter()
-                .any(|cell| cell.symbol() == "S" && cell.fg == theme::GREEN)
+                .any(|cell| cell.symbol() == "S" && cell.fg == state.theme.colors.green)
         );
         assert!(
             buffer
                 .content()
                 .iter()
-                .any(|cell| cell.symbol() == "C" && cell.fg == theme::RED)
+                .any(|cell| cell.symbol() == "C" && cell.fg == state.theme.colors.red)
+        );
+    }
+
+    #[test]
+    fn inline_connection_actions_use_runtime_theme_colors() {
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut custom_theme = crate::themes::builtin::fallback_theme();
+        custom_theme.colors.blue = Color::Rgb(1, 2, 3);
+        custom_theme.colors.green = Color::Rgb(4, 5, 6);
+        custom_theme.colors.red = Color::Rgb(7, 8, 9);
+        let mut state = AppState::new(vec![], custom_theme.clone(), vec![custom_theme]);
+        state.connect.form_open = true;
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .any(|cell| cell.symbol() == "T" && cell.fg == state.theme.colors.blue)
+        );
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .any(|cell| cell.symbol() == "S" && cell.fg == state.theme.colors.green)
+        );
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .any(|cell| cell.symbol() == "C" && cell.fg == state.theme.colors.red)
         );
     }
 
@@ -630,7 +735,7 @@ mod test {
     fn inline_connection_panel_renders_validation_error() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.form_open = true;
         state.form.error = Some("Port must be a number 1–65535".to_string());
 
@@ -643,7 +748,7 @@ mod test {
     fn connect_error_popup_renders_nothing_when_no_error() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let state = AppState::new(vec![]);
+        let state = AppState::for_test(vec![]);
 
         terminal
             .draw(|frame| render_connect_error_popup(frame, &state))
@@ -654,17 +759,18 @@ mod test {
 
     #[test]
     fn status_indicator_uses_expected_labels_and_colors() {
+        let colors = crate::themes::builtin::fallback_theme().colors;
         assert_eq!(
-            status_indicator(ConnectionStatus::Unknown),
-            (theme::FG4, " unknown")
+            status_indicator(ConnectionStatus::Unknown, &colors),
+            (colors.fg4, " unknown")
         );
         assert_eq!(
-            status_indicator(ConnectionStatus::Online),
-            (theme::GREEN, " online")
+            status_indicator(ConnectionStatus::Online, &colors),
+            (colors.green, " online")
         );
         assert_eq!(
-            status_indicator(ConnectionStatus::Offline),
-            (theme::RED, " offline")
+            status_indicator(ConnectionStatus::Offline, &colors),
+            (colors.red, " offline")
         );
     }
 
@@ -675,8 +781,9 @@ mod test {
 
     #[test]
     fn selected_row_highlight_does_not_override_foreground_color() {
-        let style = selected_row_highlight_style();
-        assert_eq!(style.bg, Some(theme::BG_SEL));
+        let colors = crate::themes::builtin::fallback_theme().colors;
+        let style = selected_row_highlight_style(&colors);
+        assert_eq!(style.bg, Some(colors.bg_sel));
         assert_eq!(style.fg, None);
     }
 }

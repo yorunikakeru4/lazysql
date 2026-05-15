@@ -9,7 +9,6 @@ steps:
     when:
       event:
         - push
-        - pull_request
 
   integration-tests:
     image: rust:1.88
@@ -43,7 +42,6 @@ steps:
     when:
       event:
         - push
-        - pull_request
 
   mirror-github:
     image: alpine:3.20

@@ -1,6 +1,7 @@
 use crate::state::app::AppState;
 use crate::state::connection::ActivePane;
-use crate::ui::{theme, widgets};
+use crate::themes::palette::ThemeColors;
+use crate::ui::widgets;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
@@ -45,7 +46,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         .map(|s| format!("database › {s}"))
         .unwrap_or_else(|| "database".into());
 
-    widgets::hintbar::render(frame, chunks[0], HINTS);
+    widgets::hintbar::render(frame, chunks[0], &state.theme.colors, HINTS);
     render_split(frame, chunks[1], state);
     let status_idx = if show_search {
         widgets::search::render_search_bar(frame, chunks[2], state);
@@ -57,6 +58,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         frame,
         chunks[status_idx],
         &state.mode,
+        &state.theme.colors,
         &context,
         "tab:switch  /:filter  ::sql",
     );
@@ -69,6 +71,7 @@ fn render_split(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 fn render_schemas_pane(frame: &mut Frame, area: Rect, state: &AppState) {
+    let colors = &state.theme.colors;
     let is_active = state.active_pane == ActivePane::Schemas;
     let schemas = state.filtered_schema_names();
 
@@ -78,22 +81,22 @@ fn render_schemas_pane(frame: &mut Frame, area: Rect, state: &AppState) {
         .map(|(i, name)| {
             if is_active && i == state.schema_selected {
                 ListItem::new(Line::from(vec![
-                    Span::styled("▶ ", Style::new().fg(theme::ORANGE)),
-                    Span::styled(name.as_str(), Style::new().fg(theme::FG0).bold()),
+                    Span::styled("▶ ", Style::new().fg(colors.orange)),
+                    Span::styled(name.as_str(), Style::new().fg(colors.fg0).bold()),
                 ]))
             } else {
                 ListItem::new(Line::from(Span::styled(
                     format!("  {name}"),
-                    Style::new().fg(if is_active { theme::FG3 } else { theme::FG4 }),
+                    inactive_item_style(is_active, colors),
                 )))
             }
         })
         .collect();
 
     let border_style = if is_active {
-        Style::new().fg(theme::ORANGE)
+        Style::new().fg(colors.orange)
     } else {
-        Style::new().fg(theme::BG3)
+        Style::new().fg(colors.bg3)
     };
 
     let mut list_state = ListState::default().with_selected(if is_active {
@@ -108,12 +111,13 @@ fn render_schemas_pane(frame: &mut Frame, area: Rect, state: &AppState) {
                 .title(" Schemas ")
                 .border_style(border_style),
         )
-        .highlight_style(Style::new().bg(theme::BG_SEL));
+        .highlight_style(Style::new().bg(colors.bg_sel));
 
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
 fn render_tables_pane(frame: &mut Frame, area: Rect, state: &AppState) {
+    let colors = &state.theme.colors;
     let is_active = state.active_pane == ActivePane::Tables;
     let schema = state.selected_schema_name().unwrap_or_default();
     let tables = state.filtered_table_names(&schema);
@@ -124,22 +128,22 @@ fn render_tables_pane(frame: &mut Frame, area: Rect, state: &AppState) {
         .map(|(i, name)| {
             if is_active && i == state.table_selected {
                 ListItem::new(Line::from(vec![
-                    Span::styled("▶ ", Style::new().fg(theme::ORANGE)),
-                    Span::styled(name.as_str(), Style::new().fg(theme::FG0).bold()),
+                    Span::styled("▶ ", Style::new().fg(colors.orange)),
+                    Span::styled(name.as_str(), Style::new().fg(colors.fg0).bold()),
                 ]))
             } else {
                 ListItem::new(Line::from(Span::styled(
                     format!("  {name}"),
-                    Style::new().fg(if is_active { theme::FG3 } else { theme::FG4 }),
+                    inactive_item_style(is_active, colors),
                 )))
             }
         })
         .collect();
 
     let border_style = if is_active {
-        Style::new().fg(theme::ORANGE)
+        Style::new().fg(colors.orange)
     } else {
-        Style::new().fg(theme::BG3)
+        Style::new().fg(colors.bg3)
     };
 
     let title = format!(
@@ -161,7 +165,11 @@ fn render_tables_pane(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let list = List::new(items)
         .block(Block::bordered().title(title).border_style(border_style))
-        .highlight_style(Style::new().bg(theme::BG_SEL));
+        .highlight_style(Style::new().bg(colors.bg_sel));
 
     frame.render_stateful_widget(list, area, &mut list_state);
+}
+
+fn inactive_item_style(is_active: bool, colors: &ThemeColors) -> Style {
+    Style::new().fg(if is_active { colors.fg3 } else { colors.fg4 })
 }

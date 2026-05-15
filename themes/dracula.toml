@@ -1,0 +1,17 @@
+name = "dracula"
+
+[colors]
+bg0 = "#282a36"
+bg1 = "#343746"
+bg3 = "#44475a"
+bg_sel = "#44475a"
+fg0 = "#f8f8f2"
+fg3 = "#bdc1cc"
+fg4 = "#6272a4"
+red = "#ff5555"
+green = "#50fa7b"
+yellow = "#f1fa8c"
+blue = "#8be9fd"
+aqua = "#8be9fd"
+orange = "#ffb86c"
+purple = "#bd93f9"

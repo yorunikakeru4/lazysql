@@ -1,6 +1,6 @@
 use crate::db::repo::sql_repo::{ConstraintType, FkRef, IndexInfo};
 use crate::state::app::AppState;
-use crate::ui::{theme, widgets};
+use crate::ui::widgets;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
@@ -49,7 +49,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     let schema = &details.schema;
     let name = &details.name;
     let context = format!("{schema}.{name}");
-    widgets::hintbar::render(frame, chunks[0], HINTS);
+    widgets::hintbar::render(frame, chunks[0], &state.theme.colors, HINTS);
     render_body(frame, chunks[1], state);
     let status_idx = if show_search {
         widgets::search::render_search_bar(frame, chunks[2], state);
@@ -61,6 +61,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         frame,
         chunks[status_idx],
         &state.mode,
+        &state.theme.colors,
         &context,
         "r:rows  /:filter",
     );
@@ -70,6 +71,7 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
     let Some(details) = &state.table_details else {
         return;
     };
+    let colors = &state.theme.colors;
 
     let body_chunks = Layout::vertical([
         Constraint::Length(1),
@@ -93,7 +95,7 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
         details.fields.len()
     );
     frame.render_widget(
-        Paragraph::new(header_text).style(Style::new().fg(theme::FG3).bg(theme::BG1)),
+        Paragraph::new(header_text).style(Style::new().fg(colors.fg3).bg(colors.bg1)),
         body_chunks[0],
     );
 
@@ -105,33 +107,33 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
         .collect();
 
     let col_header = Row::new(vec![
-        Cell::from("COLUMN").style(Style::new().fg(theme::FG4).bold()),
-        Cell::from("TYPE").style(Style::new().fg(theme::FG4).bold()),
-        Cell::from("NULL").style(Style::new().fg(theme::FG4).bold()),
-        Cell::from("CONSTRAINT").style(Style::new().fg(theme::FG4).bold()),
-        Cell::from("DEFAULT").style(Style::new().fg(theme::FG4).bold()),
+        Cell::from("COLUMN").style(Style::new().fg(colors.fg4).bold()),
+        Cell::from("TYPE").style(Style::new().fg(colors.fg4).bold()),
+        Cell::from("NULL").style(Style::new().fg(colors.fg4).bold()),
+        Cell::from("CONSTRAINT").style(Style::new().fg(colors.fg4).bold()),
+        Cell::from("DEFAULT").style(Style::new().fg(colors.fg4).bold()),
     ]);
 
     let rows: Vec<Row> = fields
         .iter()
         .map(|f| {
             let null_cell = if f.is_nullable == "YES" {
-                Cell::from("YES").style(Style::new().fg(theme::GREEN))
+                Cell::from("YES").style(Style::new().fg(colors.green))
             } else {
-                Cell::from("NO").style(Style::new().fg(theme::RED))
+                Cell::from("NO").style(Style::new().fg(colors.red))
             };
 
             let constraint_cell = match &f.constraint {
                 Some(ConstraintType::PrimaryKey) => {
-                    Cell::from("PRIMARY KEY").style(Style::new().fg(theme::YELLOW))
+                    Cell::from("PRIMARY KEY").style(Style::new().fg(colors.yellow))
                 }
                 Some(ConstraintType::Unique) => {
-                    Cell::from("UNIQUE").style(Style::new().fg(theme::YELLOW))
+                    Cell::from("UNIQUE").style(Style::new().fg(colors.yellow))
                 }
                 Some(ConstraintType::ForeignKey(t)) => {
-                    Cell::from(format!("FK → {t}")).style(Style::new().fg(theme::BLUE))
+                    Cell::from(format!("FK → {t}")).style(Style::new().fg(colors.blue))
                 }
-                None => Cell::from("—").style(Style::new().fg(theme::FG4)),
+                None => Cell::from("—").style(Style::new().fg(colors.fg4)),
             };
 
             let default_style = if f
@@ -140,16 +142,16 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
                 .map(|d| d.contains('('))
                 .unwrap_or(false)
             {
-                Style::new().fg(theme::AQUA)
+                Style::new().fg(colors.aqua)
             } else {
-                Style::new().fg(theme::PURPLE)
+                Style::new().fg(colors.purple)
             };
             let default_cell =
                 Cell::from(f.default_value.as_deref().unwrap_or("—")).style(default_style);
 
             Row::new(vec![
-                Cell::from(f.name.as_str()).style(Style::new().fg(theme::FG0)),
-                Cell::from(f.data_type.as_str()).style(Style::new().fg(theme::BLUE)),
+                Cell::from(f.name.as_str()).style(Style::new().fg(colors.fg0)),
+                Cell::from(f.data_type.as_str()).style(Style::new().fg(colors.blue)),
                 null_cell,
                 constraint_cell,
                 default_cell,
@@ -161,8 +163,8 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let table = Table::new(rows, widths)
         .header(col_header)
-        .row_highlight_style(Style::new().bg(theme::BG_SEL))
-        .block(Block::bordered().border_style(Style::new().fg(theme::BG3)));
+        .row_highlight_style(Style::new().bg(colors.bg_sel))
+        .block(Block::bordered().border_style(Style::new().fg(colors.bg3)));
     let clamped = state.inspect.selected.min(fields.len().saturating_sub(1));
     let mut table_state = TableState::default().with_selected(Some(clamped));
     frame.render_stateful_widget(table, body_chunks[1], &mut table_state);
@@ -195,17 +197,17 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let footer_lines = vec![
         Line::from(vec![
-            Span::styled("  indexes  ", Style::new().fg(theme::ORANGE)),
-            Span::styled(idx_str, Style::new().fg(theme::FG3)),
+            Span::styled("  indexes  ", Style::new().fg(colors.orange)),
+            Span::styled(idx_str, Style::new().fg(colors.fg3)),
         ]),
         Line::from(vec![
-            Span::styled("  fk-refs  ", Style::new().fg(theme::ORANGE)),
-            Span::styled(fk_str, Style::new().fg(theme::FG3)),
+            Span::styled("  fk-refs  ", Style::new().fg(colors.orange)),
+            Span::styled(fk_str, Style::new().fg(colors.fg3)),
         ]),
     ];
     frame.render_widget(
         Paragraph::new(footer_lines)
-            .block(Block::bordered().border_style(Style::new().fg(theme::BG3))),
+            .block(Block::bordered().border_style(Style::new().fg(colors.bg3))),
         body_chunks[2],
     );
 }

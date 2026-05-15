@@ -1,0 +1,17 @@
+name = "everforest"
+
+[colors]
+bg0    = "#1e2326"
+bg1    = "#272e33"
+bg3    = "#2e383c"
+bg_sel = "#374145"
+fg0    = "#d3c6aa"
+fg3    = "#859289"
+fg4    = "#7a8478"
+red    = "#e67e80"
+green  = "#a7c080"
+yellow = "#dbbc7f"
+blue   = "#7fbbb3"
+aqua   = "#83c092"
+orange = "#e69875"
+purple = "#d699b6"
