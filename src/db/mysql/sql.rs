@@ -6,8 +6,8 @@ use sqlparser::parser::Parser;
 use crate::db::mysql::init::MySqlRepo;
 use crate::db::repo::db_repo::DbError;
 use crate::db::repo::sql_repo::{
-    ColumnInfo, Database, FetchRowsResult, RowData, SqlExecuteOptions, SqlExecuteResult, SqlPage,
-    Table, TableDetails, TableRef,
+    ColumnInfo, Database, FetchRowsResult, FkRef, IndexInfo, RowData, SqlExecuteOptions,
+    SqlExecuteResult, SqlPage, Table, TableDetails, TableField, TableRef, parse_constraint,
 };
 
 /// Detects if SQL is a SELECT-like query using MySQL dialect.
@@ -251,12 +251,124 @@ impl Database for MySqlRepo {
             total_count,
         })
     }
-    async fn get_table_details(
-        &self,
-        _schema: &str,
-        _table: &str,
-    ) -> Result<TableDetails, DbError> {
-        todo!("MySQL get_table_details not yet implemented")
+    async fn get_table_details(&self, schema: &str, table: &str) -> Result<TableDetails, DbError> {
+        let esc_schema = schema.replace('`', "``");
+        let esc_table = table.replace('`', "``");
+        let mut conn = self.conn.lock().await;
+
+        // 1. Columns + constraints
+        let col_rows: Vec<mysql_async::Row> = conn
+            .exec(
+                "SELECT
+                     c.column_name,
+                     c.data_type,
+                     c.is_nullable,
+                     tc.constraint_type,
+                     kcu.referenced_table_name,
+                     c.column_default
+                 FROM information_schema.columns c
+                 LEFT JOIN information_schema.key_column_usage kcu
+                     ON kcu.table_schema = c.table_schema
+                     AND kcu.table_name  = c.table_name
+                     AND kcu.column_name = c.column_name
+                 LEFT JOIN information_schema.table_constraints tc
+                     ON tc.constraint_name = kcu.constraint_name
+                     AND tc.table_schema   = kcu.table_schema
+                 WHERE c.table_schema = ? AND c.table_name = ?
+                 ORDER BY c.ordinal_position",
+                (schema.to_string(), table.to_string()),
+            )
+            .await
+            .map_err(DbError::MySql)?;
+
+        let fields: Vec<TableField> = col_rows
+            .into_iter()
+            .map(|mut r| TableField {
+                name: r.take::<String, _>(0).unwrap_or_default(),
+                data_type: r.take::<String, _>(1).unwrap_or_default(),
+                is_nullable: r.take::<String, _>(2).unwrap_or_default(),
+                constraint: parse_constraint(
+                    r.take::<Option<String>, _>(3)
+                        .flatten()
+                        .as_deref(),
+                    r.take::<Option<String>, _>(4)
+                        .flatten()
+                        .as_deref(),
+                ),
+                default_value: r.take::<Option<String>, _>(5).flatten(),
+            })
+            .collect();
+
+        // 2. Row count (exact)
+        let count_sql = format!("SELECT COUNT(*) FROM `{esc_schema}`.`{esc_table}`");
+        let counts: Vec<i64> = conn.query(count_sql).await.map_err(DbError::MySql)?;
+        let row_count: Option<i64> = counts.into_iter().next();
+
+        // 3. Size (data + indexes in bytes → human-readable)
+        let size_rows: Vec<mysql_async::Row> = conn
+            .exec(
+                "SELECT data_length + index_length
+                 FROM information_schema.tables
+                 WHERE table_schema = ? AND table_name = ?",
+                (schema.to_string(), table.to_string()),
+            )
+            .await
+            .map_err(DbError::MySql)?;
+        let size_pretty: Option<String> = size_rows
+            .into_iter()
+            .next()
+            .and_then(|mut r| r.take::<u64, _>(0))
+            .map(format_bytes);
+
+        // 4. Indexes
+        let idx_rows: Vec<mysql_async::Row> = conn
+            .exec(
+                "SELECT DISTINCT index_name
+                 FROM information_schema.statistics
+                 WHERE table_schema = ? AND table_name = ?",
+                (schema.to_string(), table.to_string()),
+            )
+            .await
+            .map_err(DbError::MySql)?;
+        let indexes: Vec<IndexInfo> = idx_rows
+            .into_iter()
+            .map(|mut r| IndexInfo {
+                name: r.take::<String, _>(0).unwrap_or_default(),
+            })
+            .collect();
+
+        // 5. Inbound FK refs (tables that reference this table)
+        let fk_rows: Vec<mysql_async::Row> = conn
+            .exec(
+                "SELECT kcu.table_name, kcu.column_name
+                 FROM information_schema.key_column_usage kcu
+                 JOIN information_schema.table_constraints tc
+                     ON tc.constraint_name = kcu.constraint_name
+                     AND tc.table_schema   = kcu.table_schema
+                 WHERE tc.constraint_type             = 'FOREIGN KEY'
+                   AND kcu.referenced_table_schema    = ?
+                   AND kcu.referenced_table_name      = ?",
+                (schema.to_string(), table.to_string()),
+            )
+            .await
+            .map_err(DbError::MySql)?;
+        let fk_refs: Vec<FkRef> = fk_rows
+            .into_iter()
+            .map(|mut r| FkRef {
+                from_table: r.take::<String, _>(0).unwrap_or_default(),
+                column: r.take::<String, _>(1).unwrap_or_default(),
+            })
+            .collect();
+
+        Ok(TableDetails {
+            name: table.to_string(),
+            schema: schema.to_string(),
+            row_count,
+            size_pretty,
+            fields,
+            indexes,
+            fk_refs,
+        })
     }
 }
 
@@ -438,6 +550,30 @@ mod test {
         if page1.total_count > 1 {
             assert_ne!(page1.rows, page2.rows);
         }
+    }
+
+    #[tokio::test]
+    async fn get_table_details_returns_fields_and_indexes() {
+        let repo = MySqlRepo::new(test_config()).await.unwrap();
+        let details = repo.get_table_details("db_test", "users").await.unwrap();
+        assert_eq!(details.name, "users");
+        assert_eq!(details.schema, "db_test");
+        assert!(!details.fields.is_empty(), "users table must have fields");
+        assert!(
+            !details.indexes.is_empty(),
+            "users table must have at least PRIMARY KEY index"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_table_details_includes_fk_refs_for_parent_table() {
+        let repo = MySqlRepo::new(test_config()).await.unwrap();
+        let details = repo.get_table_details("db_test", "users").await.unwrap();
+        // posts.user_id references users.id → users should have an inbound FK ref
+        assert!(
+            details.fk_refs.iter().any(|fk| fk.from_table == "posts"),
+            "users should have inbound FK ref from posts"
+        );
     }
 
     #[tokio::test]
