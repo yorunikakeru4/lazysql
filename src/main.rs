@@ -35,18 +35,28 @@ async fn main() -> std::io::Result<()> {
     result
 }
 
+/// Returns `~/.config/lazysql/` directory path.
+fn config_dir() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    std::path::PathBuf::from(home)
+        .join(".config")
+        .join("lazysql")
+}
+
 /// Builds startup state without blocking on connection reachability probes.
 fn initialize_state() -> AppState {
     let connections = ConfigStorage::load();
 
-    let (available_themes, builtin_error) =
-        match themes::builtin::load(std::path::Path::new("themes")) {
-            Ok(themes) => (themes, None),
-            Err(error) => (
-                vec![themes::builtin::fallback_theme()],
-                Some(error.to_string()),
-            ),
-        };
+    let themes_dir = config_dir().join("themes");
+    themes::init::ensure_themes_dir(&themes_dir);
+
+    let (available_themes, builtin_error) = match themes::builtin::load(&themes_dir) {
+        Ok(themes) => (themes, None),
+        Err(error) => (
+            vec![themes::builtin::fallback_theme()],
+            Some(error.to_string()),
+        ),
+    };
 
     let loaded_theme = themes::storage::load(&available_themes);
 
