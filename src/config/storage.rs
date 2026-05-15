@@ -31,6 +31,58 @@ struct StoredConnection {
     password: Option<String>,
 }
 
+impl From<&PostgresConfig> for StoredConnection {
+    fn from(cfg: &PostgresConfig) -> Self {
+        Self {
+            name: cfg.name.clone(),
+            host: cfg.host.clone(),
+            user: cfg.user.clone(),
+            db_name: cfg.db_name.clone(),
+            port: cfg.port,
+            password: cfg.password.clone(),
+        }
+    }
+}
+
+impl From<&MySqlConfig> for StoredConnection {
+    fn from(cfg: &MySqlConfig) -> Self {
+        Self {
+            name: cfg.name.clone(),
+            host: cfg.host.clone(),
+            user: cfg.user.clone(),
+            db_name: cfg.db_name.clone(),
+            port: cfg.port,
+            password: cfg.password.clone(),
+        }
+    }
+}
+
+impl From<StoredConnection> for PostgresConfig {
+    fn from(c: StoredConnection) -> Self {
+        Self {
+            name: c.name,
+            host: c.host,
+            user: c.user,
+            db_name: c.db_name,
+            port: c.port,
+            password: c.password,
+        }
+    }
+}
+
+impl From<StoredConnection> for MySqlConfig {
+    fn from(c: StoredConnection) -> Self {
+        Self {
+            name: c.name,
+            host: c.host,
+            user: c.user,
+            db_name: c.db_name,
+            port: c.port,
+            password: c.password,
+        }
+    }
+}
+
 pub struct ConfigStorage;
 
 impl ConfigStorage {
@@ -61,26 +113,16 @@ impl ConfigStorage {
         let Ok(stored): Result<StoredConfig, _> = toml::from_str(&content) else {
             return Vec::new();
         };
-        let pg = stored.connections.postgres.into_iter().map(|c| {
-            ConnectConfig::Postgres(PostgresConfig {
-                name: c.name,
-                host: c.host,
-                user: c.user,
-                db_name: c.db_name,
-                port: c.port,
-                password: c.password,
-            })
-        });
-        let my = stored.connections.mysql.into_iter().map(|c| {
-            ConnectConfig::MySql(MySqlConfig {
-                name: c.name,
-                host: c.host,
-                user: c.user,
-                db_name: c.db_name,
-                port: c.port,
-                password: c.password,
-            })
-        });
+        let pg = stored
+            .connections
+            .postgres
+            .into_iter()
+            .map(|c| ConnectConfig::Postgres(c.into()));
+        let my = stored
+            .connections
+            .mysql
+            .into_iter()
+            .map(|c| ConnectConfig::MySql(c.into()));
         pg.chain(my).collect()
     }
 
@@ -91,24 +133,8 @@ impl ConfigStorage {
         let mut stored = StoredConfig::default();
         for c in connections {
             match c {
-                ConnectConfig::Postgres(cfg) => {
-                    stored.connections.postgres.push(StoredConnection {
-                        name: cfg.name.clone(),
-                        host: cfg.host.clone(),
-                        user: cfg.user.clone(),
-                        db_name: cfg.db_name.clone(),
-                        port: cfg.port,
-                        password: cfg.password.clone(),
-                    })
-                }
-                ConnectConfig::MySql(cfg) => stored.connections.mysql.push(StoredConnection {
-                    name: cfg.name.clone(),
-                    host: cfg.host.clone(),
-                    user: cfg.user.clone(),
-                    db_name: cfg.db_name.clone(),
-                    port: cfg.port,
-                    password: cfg.password.clone(),
-                }),
+                ConnectConfig::Postgres(cfg) => stored.connections.postgres.push(cfg.into()),
+                ConnectConfig::MySql(cfg) => stored.connections.mysql.push(cfg.into()),
             }
         }
         let content = toml::to_string(&stored)
