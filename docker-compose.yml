@@ -11,7 +11,7 @@ services:
     ports:
       - "5439:5432"
     volumes:
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./init/postgres.sql:/docker-entrypoint-initdb.d/init.sql
 
   mysql_test:
     image: docker.io/library/mysql:8.4
@@ -25,4 +25,4 @@ services:
     ports:
       - "3307:3306"
     volumes:
-      - ./init_mysql.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./init/mysql.sql:/docker-entrypoint-initdb.d/init.sql
