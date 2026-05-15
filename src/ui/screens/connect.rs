@@ -275,9 +275,9 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
 
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("  driver             ", Style::new().fg(theme::FG4)),
-            Span::styled(state.form.driver.label(), Style::new().fg(theme::BLUE)),
-            Span::styled("  (^d to change)", Style::new().fg(theme::FG4)),
+            Span::styled("  driver             ", Style::new().fg(colors.fg4)),
+            Span::styled(state.form.driver.label(), Style::new().fg(colors.blue)),
+            Span::styled("  (^d to change)", Style::new().fg(colors.fg4)),
         ])),
         field_rows[0],
     );
@@ -353,13 +353,14 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
 }
 
 fn render_driver_picker(frame: &mut Frame, state: &AppState) {
+    let colors = &state.theme.colors;
     let area = layout::centered_rect(48, 12, frame.area());
     frame.render_widget(Clear, area);
 
     let block = Block::bordered()
         .title(" Select driver ")
-        .title_style(Style::new().fg(theme::ORANGE).bold())
-        .border_style(Style::new().fg(theme::ORANGE));
+        .title_style(Style::new().fg(colors.orange).bold())
+        .border_style(Style::new().fg(colors.orange));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -377,7 +378,7 @@ fn render_driver_picker(frame: &mut Frame, state: &AppState) {
             Span::raw("  › "),
             Span::styled(
                 state.connect.driver_picker.query.as_str(),
-                Style::new().fg(theme::FG0),
+                Style::new().fg(colors.fg0),
             ),
         ])),
         rows[0],
@@ -413,18 +414,19 @@ fn render_driver_picker_row(
     driver: &DriverDefinition,
     state: &AppState,
 ) -> Line<'static> {
+    let colors = &state.theme.colors;
     let selected = index == state.connect.driver_picker.selected;
     let prefix = if selected { " ▶ " } else { "   " };
     let style = if selected {
-        Style::new().fg(theme::ORANGE).bold()
+        Style::new().fg(colors.orange).bold()
     } else {
-        Style::new().fg(theme::FG0)
+        Style::new().fg(colors.fg0)
     };
 
     Line::from(vec![
         Span::styled(prefix, style),
         Span::styled(format!("{:<12}", driver.label), style),
-        Span::styled(driver.summary, Style::new().fg(theme::FG4)),
+        Span::styled(driver.summary, Style::new().fg(colors.fg4)),
     ])
 }
 
