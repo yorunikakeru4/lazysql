@@ -4,11 +4,15 @@ use std::path::Path;
 
 use crate::themes::palette::{RawTheme, Theme, ThemeError};
 
-const GRUVBOX_TOML: &str = include_str!("../../themes/gruvbox.toml");
+include!(concat!(env!("OUT_DIR"), "/bundled_themes.rs"));
 
 /// Returns the embedded gruvbox theme used as a last-resort fallback.
 pub fn fallback_theme() -> Theme {
-    let raw: RawTheme = toml::from_str(GRUVBOX_TOML)
+    let (_, content) = BUNDLED
+        .iter()
+        .find(|(name, _)| *name == "gruvbox.toml")
+        .expect("gruvbox.toml missing from bundled themes");
+    let raw: RawTheme = toml::from_str(content)
         .unwrap_or_else(|e| panic!("embedded gruvbox.toml is invalid TOML: {e}"));
     Theme::try_from(raw).unwrap_or_else(|e| panic!("embedded gruvbox.toml has invalid colors: {e}"))
 }
