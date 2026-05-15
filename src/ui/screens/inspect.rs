@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Cell, Paragraph, Row, Table},
+    widgets::{Block, Cell, Paragraph, Row, Table, TableState},
 };
 
 const HINTS: &[(&str, &str)] = &[
@@ -163,8 +163,11 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let table = Table::new(rows, widths)
         .header(col_header)
+        .row_highlight_style(Style::new().bg(colors.bg_sel))
         .block(Block::bordered().border_style(Style::new().fg(colors.bg3)));
-    frame.render_widget(table, body_chunks[1]);
+    let clamped = state.inspect.selected.min(fields.len().saturating_sub(1));
+    let mut table_state = TableState::default().with_selected(Some(clamped));
+    frame.render_stateful_widget(table, body_chunks[1], &mut table_state);
 
     // Footer: indexes + FK refs
     let idx_str = if details.indexes.is_empty() {

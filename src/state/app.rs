@@ -1,11 +1,11 @@
 use crate::config::ConnectConfig;
-use crate::config::ConnectConfig::Postgres;
 use crate::db::repo::db_repo::{DbClient, DbError};
 use crate::db::repo::sql_repo::{
     Database, FetchRowsResult, SqlExecuteOptions, SqlExecuteResult, SqlPage, Table, TableDetails,
     TableRef,
 };
 use crate::state::connection::{ActivePane, ConnectState, ConnectionStatus, FormState};
+use crate::state::inspect::InspectState;
 use crate::state::mode::AppMode;
 use crate::state::records::{RecordsSource, RecordsState};
 use crate::state::search::SearchState;
@@ -49,6 +49,8 @@ pub struct AppState {
 
     /// User-facing theme load error when startup falls back.
     pub theme_error: Option<String>,
+
+    pub inspect: InspectState,
 }
 
 impl AppState {
@@ -69,6 +71,7 @@ impl AppState {
             search: SearchState::default(),
             sql_input: SqlInputState::default(),
             records: RecordsState::default(),
+            inspect: InspectState::default(),
             schemas_raw: Vec::new(),
             schema_selected: 0,
             table_selected: 0,
@@ -180,10 +183,9 @@ impl AppState {
 
     /// Tests the unsaved connection form draft and stores its reachability status.
     pub async fn test_form_connection(&mut self) {
-        match self.form.to_postgres_config() {
-            Ok(cfg) => {
+        match self.form.to_connect_config() {
+            Ok(connect) => {
                 self.form.error = None;
-                let connect = ConnectConfig::Postgres(cfg);
                 self.connect.draft_status = Some(Self::connection_status_for_config(connect).await);
             }
             Err(msg) => {
@@ -315,6 +317,19 @@ impl AppState {
 
     /// Clamps `schema_selected` and `table_selected` to the lengths of the
     /// currently filtered lists. Call after every query change.
+    /// Number of fields visible in the Inspect screen after applying the search filter.
+    pub fn filtered_inspect_len(&self) -> usize {
+        self.table_details
+            .as_ref()
+            .map(|d| {
+                d.fields
+                    .iter()
+                    .filter(|f| self.search.matches(&f.name))
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
     pub fn clamp_search_selections(&mut self) {
         let schema_len = self.filtered_schema_names().len();
         if schema_len == 0 {
@@ -332,6 +347,9 @@ impl AppState {
         } else {
             self.table_selected = self.table_selected.min(table_len - 1);
         }
+
+        let inspect_len = self.filtered_inspect_len();
+        self.inspect.clamp(inspect_len);
     }
 
     /// The schema name at the current `schema_selected` index within the filtered list, if any.
@@ -350,33 +368,30 @@ impl AppState {
             self.connect.error = Some(msg.clone());
             return Err(DbError::NotFound(msg));
         }
-        match self.connections_config[idx].clone() {
-            conn @ Postgres(_) => {
-                match tokio::time::timeout(CONNECTION_STATUS_TIMEOUT, DbClient::new(conn)).await {
-                    Err(_) => {
-                        let e = DbError::ConnectionTimeout(CONNECTION_STATUS_TIMEOUT);
-                        self.connect.error = Some(e.to_string());
-                        self.set_connection_status(idx, ConnectionStatus::Offline);
-                        Err(e)
-                    }
-                    Ok(Ok(client)) => {
-                        self.current_db = Some(client);
-                        self.set_connection_status(idx, ConnectionStatus::Online);
-                        Ok(())
-                    }
-                    Ok(Err(e)) => {
-                        self.connect.error = Some(e.to_string());
-                        self.set_connection_status(idx, ConnectionStatus::Offline);
-                        Err(e)
-                    }
-                }
+        let conn = self.connections_config[idx].clone();
+        match tokio::time::timeout(CONNECTION_STATUS_TIMEOUT, DbClient::new(conn)).await {
+            Err(_) => {
+                let e = DbError::ConnectionTimeout(CONNECTION_STATUS_TIMEOUT);
+                self.connect.error = Some(e.to_string());
+                self.set_connection_status(idx, ConnectionStatus::Offline);
+                Err(e)
+            }
+            Ok(Ok(client)) => {
+                self.current_db = Some(client);
+                self.set_connection_status(idx, ConnectionStatus::Online);
+                Ok(())
+            }
+            Ok(Err(e)) => {
+                self.connect.error = Some(e.to_string());
+                self.set_connection_status(idx, ConnectionStatus::Offline);
+                Err(e)
             }
         }
     }
 
     /// Loads all schemas from the active connection into `schemas_raw`.
     pub async fn load_schemas(&mut self) -> Result<(), DbError> {
-        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+        let Some(repo) = &self.current_db else {
             return Err(DbError::NotFound("No active connection".to_string()));
         };
         self.schemas_raw = repo.get_schemas().await?;
@@ -388,7 +403,7 @@ impl AppState {
     /// Loads full field details for a table by explicit name (used when the
     /// table was selected from a filtered list).
     pub async fn load_table_by_name(&mut self, name: String) -> Result<(), DbError> {
-        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+        let Some(repo) = &self.current_db else {
             return Err(DbError::NotFound("No active connection".to_string()));
         };
         let mut tables = repo.get_tables(vec![name]).await?;
@@ -398,10 +413,11 @@ impl AppState {
 
     /// Loads full schema details for the selected table into `table_details`.
     pub async fn load_table_details(&mut self, schema: &str, table: &str) -> Result<(), DbError> {
-        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+        let Some(repo) = &self.current_db else {
             return Err(DbError::NotFound("No active connection".to_string()));
         };
         self.table_details = Some(repo.get_table_details(schema, table).await?);
+        self.inspect.reset();
         Ok(())
     }
 
@@ -413,7 +429,7 @@ impl AppState {
             return;
         }
 
-        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+        let Some(repo) = &self.current_db else {
             self.sql_input.result = Some(SqlResult::Error("No active connection".to_string()));
             return;
         };
@@ -454,7 +470,7 @@ impl AppState {
         self.records = RecordsState::for_table(schema.clone(), table_name.clone());
         self.records.rows_per_page = table_rpp;
 
-        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+        let Some(repo) = &self.current_db else {
             return Err(DbError::NotFound("No active connection".to_string()));
         };
 
@@ -477,7 +493,7 @@ impl AppState {
 
     /// Fetches the current page of records based on offset.
     pub async fn fetch_records_page(&mut self) -> Result<(), DbError> {
-        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+        let Some(repo) = &self.current_db else {
             return Err(DbError::NotFound("No active connection".to_string()));
         };
 
@@ -552,7 +568,7 @@ impl AppState {
         self.records = RecordsState::for_query(query.clone());
         self.records.rows_per_page = table_rpp;
 
-        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+        let Some(repo) = &self.current_db else {
             return Err(DbError::NotFound("No active connection".to_string()));
         };
 
@@ -610,6 +626,9 @@ pub(crate) fn format_sql_error(error: &DbError) -> String {
             lines.push(format!("SQLSTATE: {sqlstate}"));
             lines.join("\n")
         }
+        DbError::MySql(error) => {
+            format!("SQL error: {error}")
+        }
         DbError::NotFound(message) => format!("SQL error: {message}"),
         DbError::ConnectionTimeout(timeout) => {
             format!(
@@ -621,7 +640,7 @@ pub(crate) fn format_sql_error(error: &DbError) -> String {
 }
 
 async fn execute_sql_rows(
-    repo: &crate::db::postgres::init::PostgresRepo,
+    repo: &impl Database,
     query: &str,
     page: SqlPage,
 ) -> Result<FetchRowsResult, DbError> {

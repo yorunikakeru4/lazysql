@@ -1,5 +1,5 @@
 use crate::state::app::AppState;
-use crate::state::connection::{ConnectionMeta, ConnectionStatus};
+use crate::state::connection::{ConnectionMeta, ConnectionStatus, DriverDefinition};
 use crate::themes::palette::ThemeColors;
 use crate::ui::{layout, widgets};
 use ratatui::{
@@ -117,6 +117,10 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         &format!("lazysql — {connection_count} connections"),
         &hints,
     );
+
+    if state.connect.driver_picker_open {
+        render_driver_picker(frame, state);
+    }
 }
 
 fn render_connections_header(
@@ -154,6 +158,7 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
         Cell::from(" #").style(Style::new().fg(colors.fg4)),
         Cell::from("NAME").style(Style::new().fg(colors.fg4).bold()),
         Cell::from("HOST").style(Style::new().fg(colors.fg4).bold()),
+        Cell::from("DRIVER").style(Style::new().fg(colors.fg4).bold()),
         Cell::from("DATABASE").style(Style::new().fg(colors.fg4).bold()),
         Cell::from("STATUS").style(Style::new().fg(colors.fg4).bold()),
     ]);
@@ -170,6 +175,7 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
                 Cell::from(format!(" {row_number}")).style(Style::new().fg(colors.fg4)),
                 Cell::from(m.name.clone()).style(Style::new().fg(colors.fg0)),
                 Cell::from(format!("{host}:{port}")).style(Style::new().fg(colors.fg3)),
+                Cell::from(m.driver.clone()).style(Style::new().fg(colors.blue)),
                 Cell::from(m.db_name.clone()).style(Style::new().fg(colors.fg3)),
                 status_cell,
             ])
@@ -179,7 +185,8 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
     let widths = [
         Constraint::Length(4),
         Constraint::Fill(2),
-        Constraint::Fill(3),
+        Constraint::Fill(2),
+        Constraint::Fill(2),
         Constraint::Fill(2),
         Constraint::Length(12),
     ];
@@ -241,9 +248,9 @@ fn selected_row_highlight_style(colors: &ThemeColors) -> Style {
 fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState) {
     let colors = &state.theme.colors;
     let title = if state.form.is_editing() {
-        " Edit Connection "
+        format!(" Edit Connection · {} ", state.form.driver.label())
     } else {
-        " New Connection "
+        format!(" New Connection · {} ", state.form.driver.label())
     };
     let block = Block::bordered()
         .title(title)
@@ -260,10 +267,20 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
+        Constraint::Length(1),
         Constraint::Min(1),
         Constraint::Length(1),
     ])
     .split(inner);
+
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("  driver             ", Style::new().fg(theme::FG4)),
+            Span::styled(state.form.driver.label(), Style::new().fg(theme::BLUE)),
+            Span::styled("  (^d to change)", Style::new().fg(theme::FG4)),
+        ])),
+        field_rows[0],
+    );
 
     for (i, label) in crate::state::connection::FIELD_LABELS.iter().enumerate() {
         let value = if i == 5 {
@@ -281,7 +298,7 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
                 Span::styled(format!("  {label:<19}"), Style::new().fg(color)),
                 Span::styled(value, Style::new().fg(colors.fg0)),
             ])),
-            field_rows[i],
+            field_rows[i + 1],
         );
     }
 
@@ -296,7 +313,7 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
             Span::styled(status_dot_symbol(), Style::new().fg(color)),
             Span::styled(label, Style::new().fg(color)),
         ])),
-        field_rows[6],
+        field_rows[7],
     );
 
     if let Some(err) = &state.form.error {
@@ -305,7 +322,7 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
                 Span::styled(" ! ", Style::new().fg(colors.red).bold()),
                 Span::styled(err.as_str(), Style::new().fg(colors.red)),
             ])),
-            field_rows[7],
+            field_rows[8],
         );
     }
 
@@ -318,21 +335,97 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
             Span::raw("   "),
             Span::styled("[ Cancel ]", Style::new().fg(colors.red).bold()),
         ])),
-        field_rows[8],
+        field_rows[9],
     );
 
     if state.form.focused != 5 {
-        let cursor_x = field_rows[state.form.focused].x
-            + 21
-            + state.form.values[state.form.focused].len() as u16;
-        let max_x = field_rows[state.form.focused]
+        let focused_row = state.form.focused + 1;
+        let cursor_x =
+            field_rows[focused_row].x + 21 + state.form.values[state.form.focused].len() as u16;
+        let max_x = field_rows[focused_row]
             .x
-            .saturating_add(field_rows[state.form.focused].width.saturating_sub(1));
+            .saturating_add(field_rows[focused_row].width.saturating_sub(1));
         frame.set_cursor_position(Position::new(
             cursor_x.min(max_x),
-            field_rows[state.form.focused].y,
+            field_rows[focused_row].y,
         ));
     }
+}
+
+fn render_driver_picker(frame: &mut Frame, state: &AppState) {
+    let area = layout::centered_rect(48, 12, frame.area());
+    frame.render_widget(Clear, area);
+
+    let block = Block::bordered()
+        .title(" Select driver ")
+        .title_style(Style::new().fg(theme::ORANGE).bold())
+        .border_style(Style::new().fg(theme::ORANGE));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rows = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Min(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .split(inner);
+
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::raw("  › "),
+            Span::styled(
+                state.connect.driver_picker.query.as_str(),
+                Style::new().fg(theme::FG0),
+            ),
+        ])),
+        rows[0],
+    );
+
+    let filtered = state.connect.driver_picker.filtered_drivers();
+    let driver_lines: Vec<Line> = filtered
+        .iter()
+        .enumerate()
+        .map(|(index, driver)| render_driver_picker_row(index, driver, state))
+        .collect();
+    frame.render_widget(Paragraph::new(driver_lines), rows[2]);
+
+    let total = crate::state::connection::DRIVER_REGISTRY.len();
+    let visible = filtered.len();
+    frame.render_widget(
+        Paragraph::new(format!("  {visible} of {total} drivers · type to filter")),
+        rows[3],
+    );
+    frame.render_widget(Paragraph::new("  ↵:select  esc:cancel"), rows[4]);
+
+    let cursor_x = rows[0]
+        .x
+        .saturating_add(4 + state.connect.driver_picker.query.len() as u16);
+    frame.set_cursor_position(Position::new(
+        cursor_x.min(rows[0].x.saturating_add(rows[0].width.saturating_sub(1))),
+        rows[0].y,
+    ));
+}
+
+fn render_driver_picker_row(
+    index: usize,
+    driver: &DriverDefinition,
+    state: &AppState,
+) -> Line<'static> {
+    let selected = index == state.connect.driver_picker.selected;
+    let prefix = if selected { " ▶ " } else { "   " };
+    let style = if selected {
+        Style::new().fg(theme::ORANGE).bold()
+    } else {
+        Style::new().fg(theme::FG0)
+    };
+
+    Line::from(vec![
+        Span::styled(prefix, style),
+        Span::styled(format!("{:<12}", driver.label), style),
+        Span::styled(driver.summary, Style::new().fg(theme::FG4)),
+    ])
 }
 
 /// Renders a centered error popup when a connection attempt failed.
@@ -453,6 +546,40 @@ mod test {
         assert!(text.contains("Saved Connections"));
         assert!(text.contains("New Connection"));
         assert!(text.contains("127.0.0.1"));
+    }
+
+    #[test]
+    fn driver_picker_renders_filtered_drivers() {
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::for_test(vec![]);
+        state.connect.open_driver_picker();
+        state.connect.driver_picker.query = "my".to_string();
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        let text = buffer_text(&terminal);
+        assert!(text.contains("Select driver"));
+        assert!(text.contains("mysql"));
+        assert!(!text.contains("postgres      libpq"));
+    }
+
+    #[test]
+    fn inline_connection_panel_renders_selected_driver() {
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::for_test(vec![]);
+        state.connect.form_open = true;
+        state.form = crate::state::connection::FormState::new_for_driver(
+            crate::state::connection::DriverKind::MySql,
+        );
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        let text = buffer_text(&terminal);
+        assert!(text.contains("New Connection · mysql"));
+        assert!(text.contains("driver"));
+        assert!(text.contains("mysql"));
     }
 
     #[test]

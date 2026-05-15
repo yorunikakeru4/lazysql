@@ -187,13 +187,23 @@ fn render_expanded(frame: &mut Frame, area: Rect, state: &AppState) {
         .saturating_add(2)
         .min(area.width.saturating_sub(8).max(1));
     let widths = [Constraint::Length(name_width), Constraint::Fill(1)];
-    let table = Table::new(rows, widths).block(
-        Block::bordered()
-            .title(title)
-            .border_style(Style::new().fg(colors.bg3)),
-    );
+    let num_cols = records.columns.len();
+    let flat_pos = records
+        .selected_row
+        .saturating_mul(num_cols.saturating_add(2))
+        .saturating_add(1)
+        .saturating_add(records.selected_col);
 
-    frame.render_widget(table, area);
+    let table = Table::new(rows, widths)
+        .row_highlight_style(Style::default())
+        .block(
+            Block::bordered()
+                .title(title)
+                .border_style(Style::new().fg(colors.bg3)),
+        );
+
+    let mut table_state = TableState::default().with_selected(Some(flat_pos));
+    frame.render_stateful_widget(table, area, &mut table_state);
 }
 
 fn truncate_cell(text: &str) -> String {
