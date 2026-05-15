@@ -161,8 +161,8 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
     let widths = [
         Constraint::Length(4),
         Constraint::Fill(2),
-        Constraint::Fill(3),
-        Constraint::Length(10),
+        Constraint::Fill(2),
+        Constraint::Fill(2),
         Constraint::Fill(2),
         Constraint::Length(12),
     ];
