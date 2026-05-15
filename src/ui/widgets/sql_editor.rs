@@ -380,10 +380,10 @@ fn is_highlighted_keyword(keyword: Keyword) -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::themes::palette::gruvbox;
+    
 
     fn highlighted_text(text: &str) -> Vec<String> {
-        let colors = gruvbox().colors;
+        let colors = crate::themes::builtin::fallback_theme().colors;
         highlight_sql(text, &colors)
             .into_iter()
             .filter(|span| span.style.fg == Some(colors.purple))
@@ -392,7 +392,7 @@ mod test {
     }
 
     fn text_with_color(text: &str, color: ratatui::style::Color) -> Vec<String> {
-        let colors = gruvbox().colors;
+        let colors = crate::themes::builtin::fallback_theme().colors;
         highlight_sql(text, &colors)
             .into_iter()
             .filter(|span| span.style.fg == Some(color))
@@ -417,7 +417,7 @@ mod test {
 
     #[test]
     fn highlights_ddl_keywords_with_ddl_color() {
-        let colors = gruvbox().colors;
+        let colors = crate::themes::builtin::fallback_theme().colors;
         assert_eq!(
             text_with_color("CREATE TABLE users (id int)", colors.orange),
             vec!["CREATE", "TABLE"]
@@ -426,7 +426,7 @@ mod test {
 
     #[test]
     fn highlights_clause_keywords_with_clause_color() {
-        let colors = gruvbox().colors;
+        let colors = crate::themes::builtin::fallback_theme().colors;
         assert_eq!(
             text_with_color("SELECT id FROM users WHERE id = 1", colors.blue),
             vec!["FROM", "WHERE"]
@@ -435,7 +435,7 @@ mod test {
 
     #[test]
     fn highlights_function_calls_with_function_color() {
-        let colors = gruvbox().colors;
+        let colors = crate::themes::builtin::fallback_theme().colors;
         assert_eq!(
             text_with_color("SELECT count(id), custom_fn(id) FROM users", colors.aqua),
             vec!["count", "custom_fn"]
@@ -444,7 +444,7 @@ mod test {
 
     #[test]
     fn highlights_literals_and_operators_with_their_own_colors() {
-        let colors = gruvbox().colors;
+        let colors = crate::themes::builtin::fallback_theme().colors;
         assert_eq!(
             text_with_color("SELECT id = 42 AND name = 'Ada'", colors.green),
             vec!["42", "'Ada'"]
@@ -457,7 +457,7 @@ mod test {
 
     #[test]
     fn highlights_sql_with_runtime_theme_colors() {
-        let mut theme = gruvbox();
+        let mut theme = crate::themes::builtin::fallback_theme();
         theme.colors.purple = ratatui::style::Color::Rgb(1, 2, 3);
 
         let highlighted = highlight_sql("SELECT 1", &theme.colors)

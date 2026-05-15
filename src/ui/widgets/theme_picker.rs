@@ -123,7 +123,7 @@ fn footer_line(state: &AppState, filtered_count: usize) -> Line<'_> {
 #[cfg(test)]
 mod test {
     use crate::state::app::AppState;
-    use crate::themes::palette::gruvbox;
+    
     use ratatui::{Terminal, backend::TestBackend};
 
     fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
@@ -140,8 +140,8 @@ mod test {
     fn renders_theme_picker_overlay() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let theme = gruvbox();
-        let mut state = AppState::new_with_theme(vec![], theme.clone(), vec![theme], None);
+        let theme = crate::themes::builtin::fallback_theme();
+        let mut state = AppState::new(vec![], theme.clone(), vec![theme]);
         state.theme_picker.open();
 
         terminal.draw(|frame| super::render(frame, &state)).unwrap();

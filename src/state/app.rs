@@ -10,7 +10,7 @@ use crate::state::mode::AppMode;
 use crate::state::records::{RecordsSource, RecordsState};
 use crate::state::search::SearchState;
 use crate::state::sql_input::{SqlInputState, SqlResult};
-use crate::themes::palette::{Theme, gruvbox};
+use crate::themes::palette::Theme;
 use crate::themes::picker::ThemePickerState;
 use std::collections::BTreeSet;
 use std::time::Duration;
@@ -39,31 +39,26 @@ pub struct AppState {
     pub sql_input: SqlInputState,
     pub records: RecordsState,
     /// Active runtime theme used for rendering.
-    #[allow(dead_code)]
     pub theme: Theme,
+
     /// Built-in themes available for runtime selection.
-    #[allow(dead_code)]
     pub available_themes: Vec<Theme>,
+
     /// Keyboard picker state for selecting available themes.
-    #[allow(dead_code)]
     pub theme_picker: ThemePickerState,
+
     /// User-facing theme load error when startup falls back.
-    #[allow(dead_code)]
     pub theme_error: Option<String>,
 }
 
 impl AppState {
-    /// Creates application state with explicit runtime theme data.
-    pub fn new_with_theme(
+    /// Creates application state with runtime theme data.
+    pub fn new(
         connections: Vec<ConnectConfig>,
         theme: Theme,
         available_themes: Vec<Theme>,
-        theme_error: Option<String>,
     ) -> Self {
-        let theme_names = available_themes
-            .iter()
-            .map(|theme| theme.name.clone())
-            .collect();
+        let theme_names = available_themes.iter().map(|t| t.name.clone()).collect();
 
         AppState {
             connection_statuses: vec![ConnectionStatus::Unknown; connections.len()],
@@ -84,17 +79,17 @@ impl AppState {
             theme,
             available_themes,
             theme_picker: ThemePickerState::new(theme_names),
-            theme_error,
+            theme_error: None,
         }
     }
 
-    /// Creates application state with the default gruvbox theme.
-    #[allow(dead_code)]
-    pub fn new(connections: Vec<ConnectConfig>) -> Self {
-        Self::new_with_theme(connections, gruvbox(), vec![gruvbox()], None)
+    /// Applies an exact theme name from the available theme list.
+    #[cfg(test)]
+    pub(crate) fn for_test(connections: Vec<ConnectConfig>) -> Self {
+        let theme = crate::themes::builtin::fallback_theme();
+        Self::new(connections, theme.clone(), vec![theme])
     }
 
-    /// Applies an exact theme name from the available theme list.
     pub fn apply_theme_by_name(&mut self, name: &str) -> bool {
         let Some(theme) = self
             .available_themes
@@ -184,7 +179,6 @@ impl AppState {
     }
 
     /// Tests the unsaved connection form draft and stores its reachability status.
-    #[allow(dead_code)]
     pub async fn test_form_connection(&mut self) {
         match self.form.to_postgres_config() {
             Ok(cfg) => {
@@ -671,15 +665,11 @@ mod test {
 
     #[test]
     fn app_state_stores_theme_and_picker_names() {
-        let mut dracula = gruvbox();
+        let gruvbox = crate::themes::builtin::fallback_theme();
+        let mut dracula = gruvbox.clone();
         dracula.name = "dracula".to_string();
 
-        let state = AppState::new_with_theme(
-            vec![pg_connect()],
-            gruvbox(),
-            vec![gruvbox(), dracula],
-            None,
-        );
+        let state = AppState::new(vec![pg_connect()], gruvbox.clone(), vec![gruvbox, dracula]);
 
         assert_eq!(state.theme.name, "gruvbox");
         assert_eq!(
@@ -691,14 +681,11 @@ mod test {
 
     #[test]
     fn apply_theme_by_name_updates_active_theme_and_clears_error() {
-        let mut dracula = gruvbox();
+        let gruvbox = crate::themes::builtin::fallback_theme();
+        let mut dracula = gruvbox.clone();
         dracula.name = "dracula".to_string();
-        let mut state = AppState::new_with_theme(
-            vec![pg_connect()],
-            gruvbox(),
-            vec![gruvbox(), dracula],
-            Some("failed".to_string()),
-        );
+        let mut state = AppState::new(vec![pg_connect()], gruvbox.clone(), vec![gruvbox, dracula]);
+        state.theme_error = Some("failed".to_string());
 
         let applied = state.apply_theme_by_name("dracula");
 
@@ -709,7 +696,7 @@ mod test {
 
     #[test]
     fn apply_theme_by_name_returns_false_for_unknown_theme() {
-        let mut state = AppState::new(vec![pg_connect()]);
+        let mut state = AppState::for_test(vec![pg_connect()]);
 
         let applied = state.apply_theme_by_name("missing");
 
@@ -719,7 +706,7 @@ mod test {
 
     #[test]
     fn schema_names_deduped_and_sorted() {
-        let mut state = AppState::new(vec![pg_connect()]);
+        let mut state = AppState::for_test(vec![pg_connect()]);
         state.schemas_raw = vec![
             TableRef {
                 schema: "public".to_string(),
@@ -740,7 +727,7 @@ mod test {
 
     #[test]
     fn table_names_for_schema() {
-        let mut state = AppState::new(vec![pg_connect()]);
+        let mut state = AppState::for_test(vec![pg_connect()]);
         state.schemas_raw = vec![
             TableRef {
                 schema: "public".to_string(),
@@ -763,7 +750,7 @@ mod test {
 
     #[test]
     fn selected_schema_name_returns_none_when_empty() {
-        let state = AppState::new(vec![pg_connect()]);
+        let state = AppState::for_test(vec![pg_connect()]);
         assert_eq!(state.selected_schema_name(), None);
     }
 
@@ -771,7 +758,7 @@ mod test {
     fn selected_schema_name_respects_filter() {
         // schemas: ["auth", "public"] — sorted alphabetically
         // filter "pub" → filtered = ["public"], index 0 must return "public", not "auth"
-        let mut state = AppState::new(vec![pg_connect()]);
+        let mut state = AppState::for_test(vec![pg_connect()]);
         state.schemas_raw = vec![
             TableRef {
                 schema: "auth".to_string(),
@@ -789,7 +776,7 @@ mod test {
 
     #[tokio::test]
     async fn connect_selected_out_of_bounds_returns_error() {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         let result = state.connect_selected().await;
         assert!(result.is_err());
         assert!(state.connect.error.is_some());
@@ -797,7 +784,7 @@ mod test {
 
     #[tokio::test]
     async fn connect_selected_sets_error_on_failure() {
-        let mut state = AppState::new(vec![ConnectConfig::Postgres(PostgresConfig {
+        let mut state = AppState::for_test(vec![ConnectConfig::Postgres(PostgresConfig {
             name: Some("bad".to_string()),
             host: "127.0.0.1".to_string(),
             user: "postgres".to_string(),
@@ -814,7 +801,7 @@ mod test {
 
     #[test]
     fn filtered_schema_names_empty_query_returns_all() {
-        let mut state = AppState::new(vec![pg_connect()]);
+        let mut state = AppState::for_test(vec![pg_connect()]);
         state.schemas_raw = vec![
             TableRef {
                 schema: "public".to_string(),
@@ -830,7 +817,7 @@ mod test {
 
     #[test]
     fn filtered_schema_names_filters_by_query() {
-        let mut state = AppState::new(vec![pg_connect()]);
+        let mut state = AppState::for_test(vec![pg_connect()]);
         state.schemas_raw = vec![
             TableRef {
                 schema: "public".to_string(),
@@ -847,7 +834,7 @@ mod test {
 
     #[test]
     fn filtered_table_names_filters_by_query() {
-        let mut state = AppState::new(vec![pg_connect()]);
+        let mut state = AppState::for_test(vec![pg_connect()]);
         state.schemas_raw = vec![
             TableRef {
                 schema: "public".to_string(),
@@ -865,7 +852,7 @@ mod test {
 
     #[test]
     fn select_prev_filtered_schema_wraps_to_last_visible_schema() {
-        let mut state = AppState::new(vec![pg_connect()]);
+        let mut state = AppState::for_test(vec![pg_connect()]);
         state.schemas_raw = vec![
             TableRef {
                 schema: "public".to_string(),
@@ -885,7 +872,7 @@ mod test {
 
     #[test]
     fn select_prev_filtered_table_wraps_to_last_visible_table() {
-        let mut state = AppState::new(vec![pg_connect()]);
+        let mut state = AppState::for_test(vec![pg_connect()]);
         state.schemas_raw = vec![
             TableRef {
                 schema: "public".to_string(),
@@ -905,7 +892,7 @@ mod test {
 
     #[test]
     fn filtered_connection_indices_filters_by_display_name() {
-        let mut state = AppState::new(vec![
+        let mut state = AppState::for_test(vec![
             named_pg_connect("Local Dev"),
             named_pg_connect("Staging"),
             named_pg_connect("Production"),
@@ -917,7 +904,7 @@ mod test {
 
     #[test]
     fn filtered_connection_indices_matches_case_insensitive() {
-        let mut state = AppState::new(vec![named_pg_connect("Local Dev")]);
+        let mut state = AppState::for_test(vec![named_pg_connect("Local Dev")]);
         state.search.query = "LOCAL".to_string();
 
         assert_eq!(state.filtered_connection_indices(), vec![0]);
@@ -925,7 +912,7 @@ mod test {
 
     #[test]
     fn clamp_connection_selection_moves_to_first_visible_match() {
-        let mut state = AppState::new(vec![
+        let mut state = AppState::for_test(vec![
             named_pg_connect("Local Dev"),
             named_pg_connect("Staging"),
             named_pg_connect("Production"),
@@ -940,7 +927,7 @@ mod test {
 
     #[test]
     fn select_prev_filtered_connection_wraps_to_last_visible_match() {
-        let mut state = AppState::new(vec![
+        let mut state = AppState::for_test(vec![
             named_pg_connect("Local Dev"),
             named_pg_connect("Staging"),
             named_pg_connect("Production"),
@@ -962,7 +949,7 @@ mod test {
 
     #[test]
     fn selected_filtered_connection_position_is_none_without_match() {
-        let mut state = AppState::new(vec![named_pg_connect("Local Dev")]);
+        let mut state = AppState::for_test(vec![named_pg_connect("Local Dev")]);
         state.search.query = "missing".to_string();
 
         assert_eq!(state.selected_filtered_connection_position(), None);
@@ -970,7 +957,7 @@ mod test {
 
     #[test]
     fn new_initializes_unknown_connection_statuses() {
-        let state = AppState::new(vec![
+        let state = AppState::for_test(vec![
             named_pg_connect("Local Dev"),
             named_pg_connect("Prod"),
         ]);
@@ -983,7 +970,7 @@ mod test {
 
     #[test]
     fn sync_connection_statuses_tracks_connection_count() {
-        let mut state = AppState::new(vec![named_pg_connect("Local Dev")]);
+        let mut state = AppState::for_test(vec![named_pg_connect("Local Dev")]);
         state.set_connection_status(0, ConnectionStatus::Online);
         state.connections_config.push(named_pg_connect("Prod"));
 
@@ -1002,7 +989,7 @@ mod test {
 
     #[test]
     fn remove_connection_at_keeps_statuses_aligned_for_middle_index() {
-        let mut state = AppState::new(vec![
+        let mut state = AppState::for_test(vec![
             named_pg_connect("Local Dev"),
             named_pg_connect("Staging"),
             named_pg_connect("Prod"),
@@ -1022,7 +1009,7 @@ mod test {
 
     #[tokio::test]
     async fn test_form_connection_marks_invalid_draft_offline_without_saving() {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.form.values[1] = "127.0.0.1".to_string();
         state.form.values[2] = "1".to_string();
         state.form.values[3] = "postgres".to_string();
@@ -1036,7 +1023,7 @@ mod test {
 
     #[tokio::test]
     async fn test_form_connection_marks_test_database_online() {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.form.values[0] = "test-db".to_string();
         state.form.values[1] =
             std::env::var("TEST_DB_HOST").unwrap_or_else(|_| "localhost".to_string());

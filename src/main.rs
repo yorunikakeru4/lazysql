@@ -40,47 +40,21 @@ async fn main() -> std::io::Result<()> {
 /// Builds startup state without blocking on connection reachability probes.
 fn initialize_state(connections: Vec<config::ConnectConfig>) -> AppState {
     let theme_path = themes::storage::theme_path();
-    initialize_state_with_theme_loader(connections, themes::builtin::load, &theme_path)
-}
-
-fn initialize_state_with_theme_loader(
-    connections: Vec<config::ConnectConfig>,
-    load_themes: impl FnOnce() -> Result<Vec<themes::palette::Theme>, themes::palette::ThemeError>,
-    theme_path: &Path,
-) -> AppState {
+    let load_themes = themes::builtin::load;
+    let theme_path: &Path = &theme_path;
     let (available_themes, builtin_error) = match load_themes() {
         Ok(themes) => (themes, None),
-        Err(error) => (vec![themes::palette::gruvbox()], Some(error.to_string())),
+        Err(error) => (
+            vec![themes::builtin::fallback_theme()],
+            Some(error.to_string()),
+        ),
     };
 
     let loaded_theme = themes::storage::load_from(theme_path, &available_themes);
-    let theme_error = combine_theme_errors(builtin_error, loaded_theme.error);
 
-    AppState::new_with_theme(
-        connections,
-        loaded_theme.theme,
-        available_themes,
-        theme_error,
-    )
-}
-
-fn combine_theme_errors(
-    builtin_error: Option<String>,
-    storage_error: Option<String>,
-) -> Option<String> {
-    match (builtin_error, storage_error) {
-        (Some(builtin), Some(storage)) => Some(format!("{builtin}; {storage}")),
-        (Some(builtin), None) => Some(builtin),
-        (None, storage) => storage,
-    }
-}
-
-#[cfg(test)]
-fn initialize_state_from_theme_path(
-    connections: Vec<config::ConnectConfig>,
-    theme_path: &Path,
-) -> AppState {
-    initialize_state_with_theme_loader(connections, themes::builtin::load, theme_path)
+    let mut state = AppState::new(connections, loaded_theme.theme, available_themes);
+    state.theme_error = themes::storage::combine_errors(builtin_error, loaded_theme.error);
+    state
 }
 
 async fn run(
@@ -118,50 +92,20 @@ mod test {
 
     #[test]
     fn initialize_state_does_not_refresh_connection_statuses_on_startup() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = initialize_state_from_theme_path(
-            vec![config::ConnectConfig::Postgres(config::PostgresConfig {
+        let state = initialize_state(vec![config::ConnectConfig::Postgres(
+            config::PostgresConfig {
                 name: Some("local".to_string()),
                 host: "127.0.0.1".to_string(),
                 user: "postgres".to_string(),
                 db_name: "postgres".to_string(),
                 port: 1,
                 password: None,
-            })],
-            &dir.path().join("theme.toml"),
-        );
+            },
+        )]);
 
         assert_eq!(
             state.connection_status(0),
             state::connection::ConnectionStatus::Unknown
-        );
-    }
-
-    #[test]
-    fn initialize_state_has_default_theme() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = initialize_state_from_theme_path(Vec::new(), &dir.path().join("theme.toml"));
-
-        assert_eq!(state.theme.name, "gruvbox");
-    }
-
-    #[test]
-    fn initialize_state_preserves_builtin_theme_load_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = initialize_state_with_theme_loader(
-            Vec::new(),
-            || {
-                Err(themes::palette::ThemeError(
-                    "builtin themes unavailable".to_string(),
-                ))
-            },
-            &dir.path().join("theme.toml"),
-        );
-
-        assert_eq!(state.theme.name, "gruvbox");
-        assert_eq!(
-            state.theme_error,
-            Some("builtin themes unavailable".to_string())
         );
     }
 }

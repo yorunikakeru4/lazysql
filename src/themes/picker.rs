@@ -17,7 +17,7 @@ impl ThemePickerState {
             names,
             ..Self::default()
         };
-        state.sort_names();
+        state.names.sort();
         state
     }
 
@@ -86,17 +86,6 @@ impl ThemePickerState {
     /// Returns the selected filtered theme name.
     pub fn selected_name(&self) -> Option<&str> {
         self.filtered_names().get(self.selected).copied()
-    }
-
-    /// Replaces available theme names, sorts them, and clamps selection.
-    pub fn set_names(&mut self, names: Vec<String>) {
-        self.names = names;
-        self.sort_names();
-        self.clamp_selected();
-    }
-
-    fn sort_names(&mut self) {
-        self.names.sort();
     }
 
     fn filtered_count(&self) -> usize {

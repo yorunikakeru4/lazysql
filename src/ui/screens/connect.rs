@@ -413,7 +413,6 @@ fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
 mod test {
     use super::*;
     use crate::state::app::AppState;
-    use crate::themes::palette::gruvbox;
     use ratatui::{Terminal, backend::TestBackend};
 
     fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
@@ -430,7 +429,7 @@ mod test {
     fn connect_error_popup_renders_error_message() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.error = Some("connection refused".to_string());
 
         terminal
@@ -444,7 +443,7 @@ mod test {
     fn inline_new_connection_panel_renders_next_to_saved_connections() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.form_open = true;
         state.form.values[1] = "127.0.0.1".to_string();
 
@@ -460,7 +459,7 @@ mod test {
     fn inline_connection_panel_renders_draft_offline_status() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.form_open = true;
         state.connect.draft_status = Some(ConnectionStatus::Offline);
 
@@ -473,7 +472,7 @@ mod test {
     fn inline_connection_panel_renders_unknown_status_by_default() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.form_open = true;
 
         terminal.draw(|frame| render(frame, &state)).unwrap();
@@ -485,7 +484,7 @@ mod test {
     fn connections_header_uses_lazysql_title_and_search_hint() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let state = AppState::new(vec![]);
+        let state = AppState::for_test(vec![]);
 
         terminal.draw(|frame| render(frame, &state)).unwrap();
 
@@ -502,7 +501,7 @@ mod test {
     fn connection_form_omits_theme_header_hint() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.form_open = true;
 
         terminal.draw(|frame| render(frame, &state)).unwrap();
@@ -516,7 +515,7 @@ mod test {
     fn connection_status_hints_switch_when_theme_picker_is_open() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.theme_picker.open();
 
         terminal.draw(|frame| render(frame, &state)).unwrap();
@@ -531,7 +530,7 @@ mod test {
     fn connection_status_hints_show_theme_error_when_picker_is_closed() {
         let backend = TestBackend::new(120, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.theme_error = Some("unknown theme: missing".to_string());
 
         terminal.draw(|frame| render(frame, &state)).unwrap();
@@ -545,7 +544,7 @@ mod test {
     fn inline_connection_actions_are_colored_by_action() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.form_open = true;
 
         terminal.draw(|frame| render(frame, &state)).unwrap();
@@ -575,12 +574,11 @@ mod test {
     fn inline_connection_actions_use_runtime_theme_colors() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut custom_theme = gruvbox();
+        let mut custom_theme = crate::themes::builtin::fallback_theme();
         custom_theme.colors.blue = Color::Rgb(1, 2, 3);
         custom_theme.colors.green = Color::Rgb(4, 5, 6);
         custom_theme.colors.red = Color::Rgb(7, 8, 9);
-        let mut state =
-            AppState::new_with_theme(vec![], custom_theme.clone(), vec![custom_theme], None);
+        let mut state = AppState::new(vec![], custom_theme.clone(), vec![custom_theme]);
         state.connect.form_open = true;
 
         terminal.draw(|frame| render(frame, &state)).unwrap();
@@ -610,7 +608,7 @@ mod test {
     fn inline_connection_panel_renders_validation_error() {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.form_open = true;
         state.form.error = Some("Port must be a number 1–65535".to_string());
 
@@ -623,7 +621,7 @@ mod test {
     fn connect_error_popup_renders_nothing_when_no_error() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let state = AppState::new(vec![]);
+        let state = AppState::for_test(vec![]);
 
         terminal
             .draw(|frame| render_connect_error_popup(frame, &state))
@@ -634,7 +632,7 @@ mod test {
 
     #[test]
     fn status_indicator_uses_expected_labels_and_colors() {
-        let colors = gruvbox().colors;
+        let colors = crate::themes::builtin::fallback_theme().colors;
         assert_eq!(
             status_indicator(ConnectionStatus::Unknown, &colors),
             (colors.fg4, " unknown")
@@ -656,7 +654,7 @@ mod test {
 
     #[test]
     fn selected_row_highlight_does_not_override_foreground_color() {
-        let colors = gruvbox().colors;
+        let colors = crate::themes::builtin::fallback_theme().colors;
         let style = selected_row_highlight_style(&colors);
         assert_eq!(style.bg, Some(colors.bg_sel));
         assert_eq!(style.fg, None);

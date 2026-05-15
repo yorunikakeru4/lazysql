@@ -126,7 +126,7 @@ mod test {
     fn renders_help_border_with_runtime_aqua() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let colors = crate::themes::palette::gruvbox().colors;
+        let colors = crate::themes::builtin::fallback_theme().colors;
 
         terminal
             .draw(|frame| render(frame, &Screen::Connect, &colors))
@@ -146,7 +146,7 @@ mod test {
     fn connect_help_shows_theme_shortcut_not_form_test_shortcut() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let colors = crate::themes::palette::gruvbox().colors;
+        let colors = crate::themes::builtin::fallback_theme().colors;
 
         terminal
             .draw(|frame| render(frame, &Screen::Connect, &colors))

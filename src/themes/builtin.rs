@@ -2,20 +2,31 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use crate::themes::palette::{RawTheme, Theme, ThemeError, dracula, gruvbox};
+use crate::themes::palette::{RawTheme, Theme, ThemeError};
+
+const GRUVBOX_TOML: &str = include_str!("../../themes/gruvbox.toml");
+
+/// Returns the embedded gruvbox theme used as a last-resort fallback.
+pub fn fallback_theme() -> Theme {
+    let raw: RawTheme = toml::from_str(GRUVBOX_TOML)
+        .unwrap_or_else(|e| panic!("embedded gruvbox.toml is invalid TOML: {e}"));
+    Theme::try_from(raw)
+        .unwrap_or_else(|e| panic!("embedded gruvbox.toml has invalid colors: {e}"))
+}
 
 /// Loads built-in themes from the repository themes directory.
 pub fn load() -> Result<Vec<Theme>, ThemeError> {
     load_from_dir(Path::new("themes"))
 }
 
-/// Loads all TOML themes from a directory.
+/// Loads all TOML themes from a directory. Returns empty list if directory is missing.
 pub fn load_from_dir(path: &Path) -> Result<Vec<Theme>, ThemeError> {
-    let mut themes = default_themes_by_name();
+    let mut themes = BTreeMap::new();
+
     let entries = match fs::read_dir(path) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(themes.into_values().collect());
+            return Ok(vec![]);
         }
         Err(error) => {
             return Err(ThemeError(format!(
@@ -51,12 +62,6 @@ pub fn find_by_name(themes: &[Theme], name: &str) -> Option<Theme> {
     themes.iter().find(|theme| theme.name == name).cloned()
 }
 
-fn default_themes_by_name() -> BTreeMap<String, Theme> {
-    [dracula(), gruvbox()]
-        .into_iter()
-        .map(|theme| (theme.name.clone(), theme))
-        .collect()
-}
 
 #[cfg(test)]
 mod test {
@@ -102,31 +107,17 @@ mod test {
             .map(|theme| theme.name.as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(names, vec!["alpha", "dracula", "gruvbox", "zeta"]);
+        assert_eq!(names, vec!["alpha", "zeta"]);
     }
 
     #[test]
-    fn default_list_contains_gruvbox_when_directory_is_missing() {
+    fn returns_empty_list_when_directory_is_missing() {
         let dir = tempfile::tempdir().unwrap();
         let missing_path = dir.path().join("missing");
 
         let themes = load_from_dir(&missing_path).unwrap();
 
-        assert!(find_by_name(&themes, "gruvbox").is_some());
-    }
-
-    #[test]
-    fn default_list_contains_gruvbox_and_dracula_when_directory_is_missing() {
-        let dir = tempfile::tempdir().unwrap();
-        let missing_path = dir.path().join("missing");
-
-        let themes = load_from_dir(&missing_path).unwrap();
-        let names = themes
-            .iter()
-            .map(|theme| theme.name.as_str())
-            .collect::<Vec<_>>();
-
-        assert_eq!(names, vec!["dracula", "gruvbox"]);
+        assert!(themes.is_empty());
     }
 
     #[test]
@@ -173,10 +164,18 @@ mod test {
 
     #[test]
     fn find_by_name_matches_exact_case_only() {
-        let themes = load_from_dir(std::path::Path::new("missing")).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        write_theme(&dir.path().join("gruvbox.toml"), "gruvbox");
+        write_theme(&dir.path().join("dracula.toml"), "dracula");
+        let themes = load_from_dir(dir.path()).unwrap();
 
         assert!(find_by_name(&themes, "dracula").is_some());
         assert!(find_by_name(&themes, "gruvbox").is_some());
         assert!(find_by_name(&themes, "Gruvbox").is_none());
+    }
+
+    #[test]
+    fn fallback_theme_returns_gruvbox() {
+        assert_eq!(fallback_theme().name, "gruvbox");
     }
 }

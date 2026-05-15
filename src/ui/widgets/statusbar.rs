@@ -90,7 +90,7 @@ mod test {
     fn renders_lazysql_context_and_colored_hint_keys() {
         let backend = TestBackend::new(90, 1);
         let mut terminal = Terminal::new(backend).unwrap();
-        let colors = crate::themes::palette::gruvbox().colors;
+        let colors = crate::themes::builtin::fallback_theme().colors;
 
         terminal
             .draw(|frame| {

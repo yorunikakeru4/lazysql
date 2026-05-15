@@ -44,7 +44,7 @@ mod test {
     fn renders_hint_keys_with_runtime_yellow() {
         let backend = TestBackend::new(20, 1);
         let mut terminal = Terminal::new(backend).unwrap();
-        let colors = crate::themes::palette::gruvbox().colors;
+        let colors = crate::themes::builtin::fallback_theme().colors;
         let hints = [("q", "quit")];
 
         terminal

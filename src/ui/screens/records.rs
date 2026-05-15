@@ -216,7 +216,7 @@ mod test {
     use ratatui::{Terminal, backend::TestBackend};
 
     fn app_with_expanded_records() -> AppState {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.records = crate::state::records::RecordsState::for_table(
             "public".to_string(),
             "notifications".to_string(),

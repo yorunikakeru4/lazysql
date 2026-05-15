@@ -631,7 +631,7 @@ mod test {
     use crossterm::event::KeyEvent;
 
     fn records_state_with_layout(min_table_width: u16) -> AppState {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.records.columns = vec![
             crate::db::repo::sql_repo::ColumnInfo {
                 name: "id".to_string(),
@@ -743,7 +743,7 @@ mod test {
 
     #[test]
     fn connect_error_popup_enter_dismisses_and_consumes_input() {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.error = Some("failed".to_string());
         let router = Router::new();
 
@@ -759,7 +759,7 @@ mod test {
 
     #[test]
     fn connect_error_popup_esc_dismisses_and_consumes_input() {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.error = Some("failed".to_string());
         let router = Router::new();
 
@@ -775,7 +775,7 @@ mod test {
 
     #[test]
     fn connect_error_popup_consumes_other_keys_without_dismissing() {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.connect.error = Some("failed".to_string());
         let router = Router::new();
 
@@ -791,7 +791,7 @@ mod test {
 
     #[tokio::test]
     async fn add_opens_inline_form_without_pushing_screen() {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         let mut router = Router::new();
 
         handle_connect(
@@ -808,7 +808,7 @@ mod test {
 
     #[tokio::test]
     async fn escape_closes_inline_form_and_returns_to_normal_mode() {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         let mut router = Router::new();
         state.connect.form_open = true;
         state.mode = AppMode::Insert;
@@ -827,7 +827,7 @@ mod test {
 
     #[tokio::test]
     async fn save_inline_form_applies_existing_draft_status_to_new_connection() {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         let mut router = Router::new();
         state.connect.form_open = true;
         state.mode = AppMode::Insert;
@@ -848,7 +848,7 @@ mod test {
 
     #[tokio::test]
     async fn ctrl_t_opens_theme_picker_on_connect_screen() {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         let mut router = Router::new();
 
         handle_connect(
@@ -863,7 +863,7 @@ mod test {
 
     #[tokio::test]
     async fn ctrl_t_does_not_open_theme_picker_when_form_is_open() {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         let mut router = Router::new();
         state.connect.form_open = true;
         state.form.values[0] = "local".to_string();
@@ -884,7 +884,7 @@ mod test {
 
     #[test]
     fn escape_closes_theme_picker() {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.theme_picker.open();
 
         let consumed = handle_theme_picker(
@@ -899,14 +899,10 @@ mod test {
 
     #[test]
     fn enter_applies_selected_theme() {
-        let mut dracula = crate::themes::palette::gruvbox();
+        let gruvbox = crate::themes::builtin::fallback_theme();
+        let mut dracula = gruvbox.clone();
         dracula.name = "dracula".to_string();
-        let mut state = AppState::new_with_theme(
-            vec![],
-            crate::themes::palette::gruvbox(),
-            vec![crate::themes::palette::gruvbox(), dracula],
-            None,
-        );
+        let mut state = AppState::new(vec![], gruvbox.clone(), vec![gruvbox, dracula]);
         state.theme_picker.open();
 
         let consumed = handle_theme_picker(
@@ -917,12 +913,12 @@ mod test {
 
         assert!(consumed);
         assert_eq!(state.theme.name, "dracula");
-        assert!(!state.theme_picker.open);
+        assert!(state.theme_picker.open);
     }
 
     #[test]
     fn typing_filter_updates_theme_picker_query() {
-        let mut state = AppState::new(vec![]);
+        let mut state = AppState::for_test(vec![]);
         state.theme_picker.open();
 
         let consumed = handle_theme_picker(
