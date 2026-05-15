@@ -10,6 +10,8 @@ use crate::state::mode::AppMode;
 use crate::state::records::{RecordsSource, RecordsState};
 use crate::state::search::SearchState;
 use crate::state::sql_input::{SqlInputState, SqlResult};
+use crate::themes::palette::{Theme, gruvbox};
+use crate::themes::picker::ThemePickerState;
 use std::collections::BTreeSet;
 use std::time::Duration;
 
@@ -36,10 +38,33 @@ pub struct AppState {
     pub search: SearchState,
     pub sql_input: SqlInputState,
     pub records: RecordsState,
+    /// Active runtime theme used for rendering.
+    #[allow(dead_code)]
+    pub theme: Theme,
+    /// Built-in themes available for runtime selection.
+    #[allow(dead_code)]
+    pub available_themes: Vec<Theme>,
+    /// Keyboard picker state for selecting available themes.
+    #[allow(dead_code)]
+    pub theme_picker: ThemePickerState,
+    /// User-facing theme load error when startup falls back.
+    #[allow(dead_code)]
+    pub theme_error: Option<String>,
 }
 
 impl AppState {
-    pub fn new(connections: Vec<ConnectConfig>) -> Self {
+    /// Creates application state with explicit runtime theme data.
+    pub fn new_with_theme(
+        connections: Vec<ConnectConfig>,
+        theme: Theme,
+        available_themes: Vec<Theme>,
+        theme_error: Option<String>,
+    ) -> Self {
+        let theme_names = available_themes
+            .iter()
+            .map(|theme| theme.name.clone())
+            .collect();
+
         AppState {
             connection_statuses: vec![ConnectionStatus::Unknown; connections.len()],
             connections_config: connections,
@@ -56,7 +81,17 @@ impl AppState {
             mode: AppMode::default(),
             active_pane: ActivePane::default(),
             table_details: None,
+            theme,
+            available_themes,
+            theme_picker: ThemePickerState::new(theme_names),
+            theme_error,
         }
+    }
+
+    /// Creates application state with the default gruvbox theme.
+    #[allow(dead_code)]
+    pub fn new(connections: Vec<ConnectConfig>) -> Self {
+        Self::new_with_theme(connections, gruvbox(), vec![gruvbox()], None)
     }
 
     /// Unique schema names sorted alphabetically.
@@ -615,6 +650,26 @@ mod test {
             port: 5432,
             password: None,
         })
+    }
+
+    #[test]
+    fn app_state_stores_theme_and_picker_names() {
+        let mut dracula = gruvbox();
+        dracula.name = "dracula".to_string();
+
+        let state = AppState::new_with_theme(
+            vec![pg_connect()],
+            gruvbox(),
+            vec![gruvbox(), dracula],
+            None,
+        );
+
+        assert_eq!(state.theme.name, "gruvbox");
+        assert_eq!(
+            state.theme_picker.filtered_names(),
+            vec!["dracula", "gruvbox"]
+        );
+        assert_eq!(state.theme_error, None);
     }
 
     #[test]
