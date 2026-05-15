@@ -22,17 +22,93 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, mode: &AppMode, context: &st
 
     let now = Local::now().format("%H:%M:%S").to_string();
 
-    let spans = vec![
+    let mut spans = vec![
         Span::styled(pill_label, Style::new().bg(pill_bg).fg(theme::BG0).bold()),
         Span::raw("  "),
-        Span::styled(context, Style::new().fg(theme::FG3)),
+        Span::styled(context, Style::new().fg(theme::BLUE).bold()),
         Span::raw("   "),
-        Span::styled(hints, Style::new().fg(theme::FG4)),
-        Span::styled(format!(" {now} "), Style::new().fg(theme::FG0)),
     ];
+    spans.extend(hint_spans(hints));
+    spans.push(Span::styled(
+        format!(" {now} "),
+        Style::new().fg(theme::FG0),
+    ));
 
     frame.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::new().bg(theme::BG1)),
         area,
     );
+}
+
+fn hint_spans(hints: &str) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    for (i, hint) in hints
+        .split("  ")
+        .filter(|hint| !hint.is_empty())
+        .enumerate()
+    {
+        if i > 0 {
+            spans.push(Span::styled("  ", Style::new().fg(theme::FG4)));
+        }
+        let Some((key, action)) = hint.split_once(':') else {
+            spans.push(Span::styled(hint.to_string(), Style::new().fg(theme::FG4)));
+            continue;
+        };
+        spans.push(Span::styled(
+            key.to_string(),
+            Style::new().fg(theme::YELLOW),
+        ));
+        spans.push(Span::styled(":", Style::new().fg(theme::FG4)));
+        spans.push(Span::styled(
+            action.to_string(),
+            Style::new().fg(theme::FG3),
+        ));
+    }
+    spans
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect()
+    }
+
+    #[test]
+    fn renders_lazysql_context_and_colored_hint_keys() {
+        let backend = TestBackend::new(90, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render(
+                    frame,
+                    frame.area(),
+                    &AppMode::Insert,
+                    "lazysql — 0 connections",
+                    "tab:next  shift-tab:back  ^s:save  ^t:test  esc:cancel",
+                );
+            })
+            .unwrap();
+
+        let text = buffer_text(&terminal);
+        assert!(text.contains("lazysql"));
+
+        assert!(
+            terminal
+                .backend()
+                .buffer()
+                .content()
+                .iter()
+                .any(|cell| cell.symbol() == "t" && cell.fg == theme::YELLOW)
+        );
+    }
 }

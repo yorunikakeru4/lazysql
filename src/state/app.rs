@@ -132,6 +132,28 @@ impl AppState {
         self.set_connection_status(index, status);
     }
 
+    /// Tests the unsaved connection form draft and stores its reachability status.
+    pub async fn test_form_connection(&mut self) {
+        match self.form.to_postgres_config() {
+            Ok(cfg) => {
+                self.form.error = None;
+                let connect = ConnectConfig::Postgres(cfg);
+                self.connect.draft_status = Some(Self::connection_status_for_config(connect).await);
+            }
+            Err(msg) => {
+                self.form.error = Some(msg);
+                self.connect.draft_status = None;
+            }
+        }
+    }
+
+    async fn connection_status_for_config(connect: ConnectConfig) -> ConnectionStatus {
+        match tokio::time::timeout(CONNECTION_STATUS_TIMEOUT, DbClient::new(connect)).await {
+            Ok(Ok(_)) => ConnectionStatus::Online,
+            Ok(Err(_)) | Err(_) => ConnectionStatus::Offline,
+        }
+    }
+
     /// Connection indices filtered by display name.
     pub fn filtered_connection_indices(&self) -> Vec<usize> {
         self.connections_config
@@ -896,5 +918,37 @@ mod test {
             state.connection_statuses,
             vec![ConnectionStatus::Online, ConnectionStatus::Unknown]
         );
+    }
+
+    #[tokio::test]
+    async fn test_form_connection_marks_invalid_draft_offline_without_saving() {
+        let mut state = AppState::new(vec![]);
+        state.form.values[1] = "127.0.0.1".to_string();
+        state.form.values[2] = "1".to_string();
+        state.form.values[3] = "postgres".to_string();
+        state.form.values[4] = "postgres".to_string();
+
+        state.test_form_connection().await;
+
+        assert!(state.connections_config.is_empty());
+        assert_eq!(state.connect.draft_status, Some(ConnectionStatus::Offline));
+    }
+
+    #[tokio::test]
+    async fn test_form_connection_marks_test_database_online() {
+        let mut state = AppState::new(vec![]);
+        state.form.values[0] = "test-db".to_string();
+        state.form.values[1] =
+            std::env::var("TEST_DB_HOST").unwrap_or_else(|_| "localhost".to_string());
+        state.form.values[2] = std::env::var("TEST_DB_PORT").unwrap_or_else(|_| "5439".to_string());
+        state.form.values[3] =
+            std::env::var("TEST_DB_USER").unwrap_or_else(|_| "test_user".to_string());
+        state.form.values[4] =
+            std::env::var("TEST_DB_NAME").unwrap_or_else(|_| "db_test".to_string());
+        state.form.values[5] = std::env::var("TEST_DB_PASSWORD").unwrap_or_default();
+
+        state.test_form_connection().await;
+
+        assert_eq!(state.connect.draft_status, Some(ConnectionStatus::Online));
     }
 }

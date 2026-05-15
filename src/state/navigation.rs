@@ -2,7 +2,6 @@
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Screen {
     Connect,
-    AddConnection,
     Database,
     Inspect,
     Records,

@@ -55,12 +55,11 @@ pub async fn handle(
 
     match router.current() {
         Some(Screen::Connect) => {
-            if key.code == KeyCode::Char('q') {
+            if key.code == KeyCode::Char('q') && !state.connect.form_open {
                 return Ok(false);
             }
             handle_connect(key, state, router).await;
         }
-        Some(Screen::AddConnection) => handle_add_connection(key, state, router).await,
         Some(Screen::Database) => handle_database(key, state, router, terminal).await?,
         Some(Screen::Inspect) => handle_inspect(key, state, router, terminal).await?,
         Some(Screen::Records) => {
@@ -235,6 +234,11 @@ fn handle_search(key: KeyEvent, state: &mut AppState, router: &Router) {
 // ─── Connect ─────────────────────────────────────────────────────────────────
 
 async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router) {
+    if state.connect.form_open {
+        handle_connection_form(key, state, router).await;
+        return;
+    }
+
     match key.code {
         KeyCode::Down | KeyCode::Char('j') => {
             if !state.search.query.is_empty() {
@@ -256,8 +260,8 @@ async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router
         }
         KeyCode::Char('a') => {
             state.form.reset();
+            state.connect.open_form();
             state.mode = AppMode::Insert;
-            router.push(Screen::AddConnection);
         }
         KeyCode::Char('r') => {
             state.refresh_connection_statuses().await;
@@ -270,8 +274,8 @@ async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router
                 state.connections_config.get(state.connect.selected)
             {
                 state.form = FormState::from_postgres_config(cfg, Some(state.connect.selected));
+                state.connect.open_form();
                 state.mode = AppMode::Insert;
-                router.push(Screen::AddConnection);
             }
         }
         KeyCode::Char('d') => {
@@ -301,12 +305,11 @@ async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router
     }
 }
 
-// ─── Add Connection ───────────────────────────────────────────────────────────
-
-async fn handle_add_connection(key: KeyEvent, state: &mut AppState, router: &mut Router) {
+async fn handle_connection_form(key: KeyEvent, state: &mut AppState, router: &mut Router) {
     match key.code {
         KeyCode::Esc => {
             state.form.reset();
+            state.connect.close_form();
             state.mode = AppMode::Normal;
             router.pop();
         }
@@ -314,13 +317,18 @@ async fn handle_add_connection(key: KeyEvent, state: &mut AppState, router: &mut
         KeyCode::BackTab | KeyCode::Up => state.form.prev_field(),
         KeyCode::Backspace => {
             state.form.current_value_mut().pop();
+            state.connect.draft_status = None;
         }
         KeyCode::Enter => save_connection_form(state, router).await,
         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             save_connection_form(state, router).await;
         }
+        KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            state.test_form_connection().await;
+        }
         KeyCode::Char(c) => {
             state.form.current_value_mut().push(c);
+            state.connect.draft_status = None;
         }
         _ => {}
     }
@@ -342,11 +350,18 @@ async fn save_connection_form(state: &mut AppState, router: &mut Router) {
                 state.connect.selected = state.connections_config.len().saturating_sub(1);
             }
             state.sync_connection_statuses();
+            if let Some(status) = state.connect.draft_status {
+                state.set_connection_status(state.connect.selected, status);
+            }
+            #[cfg(not(test))]
             let _ = ConfigStorage::save(&state.connections_config);
-            state
-                .refresh_connection_status(state.connect.selected)
-                .await;
+            if state.connect.draft_status.is_none() {
+                state
+                    .refresh_connection_status(state.connect.selected)
+                    .await;
+            }
             state.form.reset();
+            state.connect.close_form();
             state.mode = AppMode::Normal;
             router.pop();
         }
@@ -570,6 +585,7 @@ async fn handle_records(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::state::connection::ConnectionStatus;
     use crossterm::event::KeyEvent;
 
     fn records_state_with_layout(min_table_width: u16) -> AppState {
@@ -729,5 +745,62 @@ mod test {
 
         assert!(consumed);
         assert!(state.connect.error.is_some());
+    }
+
+    #[tokio::test]
+    async fn add_opens_inline_form_without_pushing_screen() {
+        let mut state = AppState::new(vec![]);
+        let mut router = Router::new();
+
+        handle_connect(
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE),
+            &mut state,
+            &mut router,
+        )
+        .await;
+
+        assert_eq!(router.current(), Some(&Screen::Connect));
+        assert!(state.connect.form_open);
+        assert_eq!(state.mode, AppMode::Insert);
+    }
+
+    #[tokio::test]
+    async fn escape_closes_inline_form_and_returns_to_normal_mode() {
+        let mut state = AppState::new(vec![]);
+        let mut router = Router::new();
+        state.connect.form_open = true;
+        state.mode = AppMode::Insert;
+
+        handle_connect(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &mut state,
+            &mut router,
+        )
+        .await;
+
+        assert_eq!(router.current(), Some(&Screen::Connect));
+        assert!(!state.connect.form_open);
+        assert_eq!(state.mode, AppMode::Normal);
+    }
+
+    #[tokio::test]
+    async fn save_inline_form_applies_existing_draft_status_to_new_connection() {
+        let mut state = AppState::new(vec![]);
+        let mut router = Router::new();
+        state.connect.form_open = true;
+        state.mode = AppMode::Insert;
+        state.connect.draft_status = Some(ConnectionStatus::Online);
+        state.form.values[0] = "local".to_string();
+        state.form.values[1] = "127.0.0.1".to_string();
+        state.form.values[2] = "5432".to_string();
+        state.form.values[3] = "postgres".to_string();
+        state.form.values[4] = "postgres".to_string();
+
+        save_connection_form(&mut state, &mut router).await;
+
+        assert_eq!(state.connections_config.len(), 1);
+        assert_eq!(state.connection_status(0), ConnectionStatus::Online);
+        assert!(!state.connect.form_open);
+        assert_eq!(state.mode, AppMode::Normal);
     }
 }

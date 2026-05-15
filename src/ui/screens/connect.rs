@@ -3,7 +3,7 @@ use crate::state::connection::{ConnectionMeta, ConnectionStatus};
 use crate::ui::{layout, theme, widgets};
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout, Rect},
+    layout::{Alignment, Constraint, Layout, Position, Rect},
     style::Color,
     style::Style,
     text::{Line, Span},
@@ -12,11 +12,10 @@ use ratatui::{
 
 const HINTS: &[(&str, &str)] = &[
     ("a", "add"),
-    ("r", "refresh"),
     ("↵", "connect"),
     ("e", "edit"),
     ("d", "delete"),
-    ("/", "filter"),
+    ("/", "search"),
     ("?", "help"),
     ("q", "quit"),
 ];
@@ -25,9 +24,49 @@ const HINTS: &[(&str, &str)] = &[
 pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     let area = frame.area();
     let show_search = state.search.active || !state.search.query.is_empty();
+    if state.connect.form_open {
+        let chunks = Layout::vertical(if show_search {
+            vec![
+                Constraint::Length(3),
+                Constraint::Fill(1),
+                Constraint::Length(3),
+                Constraint::Length(1),
+            ]
+        } else {
+            vec![
+                Constraint::Length(3),
+                Constraint::Fill(1),
+                Constraint::Length(1),
+            ]
+        })
+        .split(area);
+
+        render_connections_header(frame, chunks[0]);
+        let panes = Layout::horizontal([Constraint::Percentage(52), Constraint::Percentage(48)])
+            .split(chunks[1]);
+        render_connection_list(frame, panes[0], state);
+        render_connection_form_panel(frame, panes[1], state);
+
+        let status_idx = if show_search {
+            widgets::search::render_search_bar(frame, chunks[2], state);
+            3
+        } else {
+            2
+        };
+        let connection_count = state.connections_config.len();
+        widgets::statusbar::render(
+            frame,
+            chunks[status_idx],
+            &state.mode,
+            &format!("lazysql — {connection_count} connections"),
+            "tab:next  shift-tab:back  ^s:save  ^t:test  esc:cancel",
+        );
+        return;
+    }
+
     let chunks = Layout::vertical(if show_search {
         vec![
-            Constraint::Length(1),
+            Constraint::Length(3),
             Constraint::Fill(1),
             Constraint::Length(3),
             Constraint::Length(5),
@@ -35,7 +74,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         ]
     } else {
         vec![
-            Constraint::Length(1),
+            Constraint::Length(3),
             Constraint::Fill(1),
             Constraint::Length(5),
             Constraint::Length(1),
@@ -43,7 +82,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     })
     .split(area);
 
-    widgets::hintbar::render(frame, chunks[0], HINTS);
+    render_connections_header(frame, chunks[0]);
     render_connection_list(frame, chunks[1], state);
     let details_idx = if show_search {
         widgets::search::render_search_bar(frame, chunks[2], state);
@@ -57,9 +96,27 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         frame,
         chunks[details_idx + 1],
         &state.mode,
-        &format!("dbx — {connection_count} connections"),
-        "j/k:move  /:filter  a:add  ↵:connect",
+        &format!("lazysql — {connection_count} connections"),
+        "j/k:move  /:search  a:add  ↵:connect",
     );
+}
+
+fn render_connections_header(frame: &mut Frame, area: Rect) {
+    let title = Line::from(vec![
+        Span::styled(" lazysql ", Style::new().fg(theme::BLUE).bold()),
+        Span::styled(env!("CARGO_PKG_VERSION"), Style::new().fg(theme::FG3)),
+        Span::raw(" "),
+    ]);
+    let block = Block::bordered()
+        .title(title)
+        .title(
+            Line::styled(" Connections ", Style::new().fg(theme::BLUE).bold())
+                .alignment(Alignment::Right),
+        )
+        .border_style(Style::new().fg(theme::BLUE));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    widgets::hintbar::render(frame, inner, HINTS);
 }
 
 fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -155,6 +212,102 @@ fn status_dot_symbol() -> &'static str {
 
 fn selected_row_highlight_style() -> Style {
     Style::new().bg(theme::BG_SEL)
+}
+
+fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState) {
+    let title = if state.form.is_editing() {
+        " Edit Connection "
+    } else {
+        " New Connection "
+    };
+    let block = Block::bordered()
+        .title(title)
+        .title_style(Style::new().fg(theme::ORANGE).bold())
+        .border_style(Style::new().fg(theme::ORANGE));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let field_rows = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Min(1),
+        Constraint::Length(1),
+    ])
+    .split(inner);
+
+    for (i, label) in crate::state::connection::FIELD_LABELS.iter().enumerate() {
+        let value = if i == 5 {
+            "*".repeat(state.form.values[i].chars().count())
+        } else {
+            state.form.values[i].clone()
+        };
+        let color = if i == state.form.focused {
+            theme::ORANGE
+        } else {
+            theme::FG4
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(format!("  {label:<19}"), Style::new().fg(color)),
+                Span::styled(value, Style::new().fg(theme::FG0)),
+            ])),
+            field_rows[i],
+        );
+    }
+
+    let status = state
+        .connect
+        .draft_status
+        .unwrap_or(ConnectionStatus::Unknown);
+    let (color, label) = status_indicator(status);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("  status             ", Style::new().fg(theme::FG4)),
+            Span::styled(status_dot_symbol(), Style::new().fg(color)),
+            Span::styled(label, Style::new().fg(color)),
+        ])),
+        field_rows[6],
+    );
+
+    if let Some(err) = &state.form.error {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(" ! ", Style::new().fg(theme::RED).bold()),
+                Span::styled(err.as_str(), Style::new().fg(theme::RED)),
+            ])),
+            field_rows[7],
+        );
+    }
+
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::raw("  "),
+            Span::styled("[ Test ]", Style::new().fg(theme::BLUE).bold()),
+            Span::raw("   "),
+            Span::styled("[ Save ]", Style::new().fg(theme::GREEN).bold()),
+            Span::raw("   "),
+            Span::styled("[ Cancel ]", Style::new().fg(theme::RED).bold()),
+        ])),
+        field_rows[8],
+    );
+
+    if state.form.focused != 5 {
+        let cursor_x = field_rows[state.form.focused].x
+            + 22
+            + state.form.values[state.form.focused].len() as u16;
+        let max_x = field_rows[state.form.focused]
+            .x
+            .saturating_add(field_rows[state.form.focused].width.saturating_sub(1));
+        frame.set_cursor_position(Position::new(
+            cursor_x.min(max_x),
+            field_rows[state.form.focused].y,
+        ));
+    }
 }
 
 /// Renders a centered error popup when a connection attempt failed.
@@ -257,6 +410,106 @@ mod test {
             .unwrap();
 
         assert!(buffer_text(&terminal).contains("connection refused"));
+    }
+
+    #[test]
+    fn inline_new_connection_panel_renders_next_to_saved_connections() {
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::new(vec![]);
+        state.connect.form_open = true;
+        state.form.values[1] = "127.0.0.1".to_string();
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        let text = buffer_text(&terminal);
+        assert!(text.contains("Saved Connections"));
+        assert!(text.contains("New Connection"));
+        assert!(text.contains("127.0.0.1"));
+    }
+
+    #[test]
+    fn inline_connection_panel_renders_draft_offline_status() {
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::new(vec![]);
+        state.connect.form_open = true;
+        state.connect.draft_status = Some(ConnectionStatus::Offline);
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        assert!(buffer_text(&terminal).contains("offline"));
+    }
+
+    #[test]
+    fn inline_connection_panel_renders_unknown_status_by_default() {
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::new(vec![]);
+        state.connect.form_open = true;
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        assert!(buffer_text(&terminal).contains("unknown"));
+    }
+
+    #[test]
+    fn connections_header_uses_lazysql_title_and_search_hint() {
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let state = AppState::new(vec![]);
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        let text = buffer_text(&terminal);
+        assert!(text.contains("lazysql"));
+        assert!(text.contains("Connections"));
+        assert!(text.contains("/:search"));
+        assert!(!text.contains("r:refresh"));
+        assert!(!text.contains("/:filter"));
+    }
+
+    #[test]
+    fn inline_connection_actions_are_colored_by_action() {
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::new(vec![]);
+        state.connect.form_open = true;
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .any(|cell| cell.symbol() == "T" && cell.fg == theme::BLUE)
+        );
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .any(|cell| cell.symbol() == "S" && cell.fg == theme::GREEN)
+        );
+        assert!(
+            buffer
+                .content()
+                .iter()
+                .any(|cell| cell.symbol() == "C" && cell.fg == theme::RED)
+        );
+    }
+
+    #[test]
+    fn inline_connection_panel_renders_validation_error() {
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::new(vec![]);
+        state.connect.form_open = true;
+        state.form.error = Some("Port must be a number 1–65535".to_string());
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        assert!(buffer_text(&terminal).contains("Port must be a number 1–65535"));
     }
 
     #[test]
