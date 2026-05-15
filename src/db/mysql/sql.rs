@@ -97,11 +97,59 @@ fn format_bytes(bytes: u64) -> String {
 }
 
 impl Database for MySqlRepo {
-    async fn get_tables(&self, _table_names: Vec<String>) -> Result<Vec<Table>, DbError> {
-        todo!("MySQL get_tables not yet implemented")
-    }
     async fn get_schemas(&self) -> Result<Vec<TableRef>, DbError> {
-        todo!("MySQL get_schemas not yet implemented")
+        let mut conn = self.conn.lock().await;
+        let rows: Vec<mysql_async::Row> = conn
+            .query(
+                "SELECT table_schema, table_name
+                 FROM information_schema.tables
+                 WHERE table_type = 'BASE TABLE'
+                   AND table_schema NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
+                 ORDER BY table_schema, table_name",
+            )
+            .await
+            .map_err(DbError::MySql)?;
+        Ok(rows
+            .into_iter()
+            .map(|mut r| TableRef {
+                schema: r.take::<String, _>(0).unwrap_or_default(),
+                name: r.take::<String, _>(1).unwrap_or_default(),
+            })
+            .collect())
+    }
+
+    async fn get_tables(&self, table_names: Vec<String>) -> Result<Vec<Table>, DbError> {
+        if table_names.is_empty() {
+            return Err(DbError::NotFound("Tables not found".to_string()));
+        }
+        let placeholders = table_names
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT DISTINCT table_name
+             FROM information_schema.columns
+             WHERE table_name IN ({placeholders})
+             ORDER BY table_name"
+        );
+        let params = mysql_async::Params::Positional(
+            table_names
+                .iter()
+                .map(|n| mysql_async::Value::from(n.as_str()))
+                .collect(),
+        );
+        let mut conn = self.conn.lock().await;
+        let rows: Vec<mysql_async::Row> = conn.exec(&sql, params).await.map_err(DbError::MySql)?;
+        if rows.is_empty() {
+            return Err(DbError::NotFound("Tables not found".to_string()));
+        }
+        Ok(rows
+            .into_iter()
+            .map(|mut r| Table {
+                name: r.take::<String, _>(0).unwrap_or_default(),
+            })
+            .collect())
     }
     async fn execute_sql_with_options(
         &self,
@@ -198,5 +246,50 @@ mod test {
             mysql_value_to_string(val),
             Some("2024-03-15 10:30:45".to_string())
         );
+    }
+
+    fn test_config() -> crate::config::MySqlConfig {
+        crate::config::MySqlConfig {
+            name: None,
+            host: std::env::var("TEST_MYSQL_HOST").unwrap_or_else(|_| "localhost".to_string()),
+            user: std::env::var("TEST_MYSQL_USER").unwrap_or_else(|_| "test_user".to_string()),
+            db_name: std::env::var("TEST_MYSQL_DB").unwrap_or_else(|_| "db_test".to_string()),
+            port: std::env::var("TEST_MYSQL_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(3307),
+            password: std::env::var("TEST_MYSQL_PASSWORD").ok(),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_schemas() {
+        let repo = MySqlRepo::new(test_config()).await.unwrap();
+        let schemas = repo.get_schemas().await.unwrap();
+        let users_entry = schemas
+            .iter()
+            .find(|s| s.schema == "db_test" && s.name == "users");
+        assert!(users_entry.is_some(), "expected db_test.users in schemas");
+    }
+
+    #[tokio::test]
+    async fn get_tables() {
+        let repo = MySqlRepo::new(test_config()).await.unwrap();
+        let tables = repo
+            .get_tables(vec!["users".to_string(), "posts".to_string()])
+            .await
+            .unwrap();
+        assert!(tables.iter().any(|t| t.name == "users"));
+        assert!(tables.iter().any(|t| t.name == "posts"));
+    }
+
+    #[tokio::test]
+    async fn full_db_get() {
+        let repo = MySqlRepo::new(test_config()).await.unwrap();
+        let schemas = repo.get_schemas().await.unwrap();
+        let table_names: Vec<String> = schemas.iter().map(|s| s.name.clone()).collect();
+        let tables = repo.get_tables(table_names).await.unwrap();
+        assert!(tables.iter().any(|t| t.name == "users"));
+        assert!(tables.iter().any(|t| t.name == "posts"));
     }
 }

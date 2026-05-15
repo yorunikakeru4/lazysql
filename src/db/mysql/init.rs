@@ -4,7 +4,7 @@ use crate::db::repo::db_repo::DbError;
 /// MySQL database connection wrapper.
 #[derive(Clone)]
 pub struct MySqlRepo {
-    conn: std::sync::Arc<tokio::sync::Mutex<mysql_async::Conn>>,
+    pub(crate) conn: std::sync::Arc<tokio::sync::Mutex<mysql_async::Conn>>,
 }
 
 impl std::fmt::Debug for MySqlRepo {
