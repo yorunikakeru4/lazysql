@@ -33,4 +33,6 @@ pub fn render(frame: &mut Frame, state: &AppState, router: &Router) {
     {
         widgets::help::render(frame, screen);
     }
+
+    widgets::theme_picker::render(frame, state);
 }

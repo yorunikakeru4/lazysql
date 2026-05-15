@@ -10,14 +10,22 @@ use ratatui::{
     widgets::{Block, Cell, Clear, Paragraph, Row, Table, TableState},
 };
 
-const HINTS: &[(&str, &str)] = &[
+const CONNECT_HINTS: &[(&str, &str)] = &[
     ("a", "add"),
     ("↵", "connect"),
     ("e", "edit"),
     ("d", "delete"),
     ("/", "search"),
+    ("^t", "theme"),
     ("?", "help"),
     ("q", "quit"),
+];
+
+const FORM_HINTS: &[(&str, &str)] = &[
+    ("tab", "next"),
+    ("^s", "save"),
+    ("^t", "test"),
+    ("esc", "cancel"),
 ];
 
 /// Renders the connection list screen.
@@ -41,7 +49,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         })
         .split(area);
 
-        render_connections_header(frame, chunks[0]);
+        render_connections_header(frame, chunks[0], FORM_HINTS);
         let panes = Layout::horizontal([Constraint::Percentage(52), Constraint::Percentage(48)])
             .split(chunks[1]);
         render_connection_list(frame, panes[0], state);
@@ -82,7 +90,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     })
     .split(area);
 
-    render_connections_header(frame, chunks[0]);
+    render_connections_header(frame, chunks[0], CONNECT_HINTS);
     render_connection_list(frame, chunks[1], state);
     let details_idx = if show_search {
         widgets::search::render_search_bar(frame, chunks[2], state);
@@ -92,16 +100,21 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     };
     render_details_panel(frame, chunks[details_idx], state);
     let connection_count = state.connections_config.len();
+    let hints = if state.theme_picker.open {
+        "type:filter  ↵:select  esc:cancel"
+    } else {
+        "j/k:move  /:search  a:add  ↵:connect  ^t:theme"
+    };
     widgets::statusbar::render(
         frame,
         chunks[details_idx + 1],
         &state.mode,
         &format!("lazysql — {connection_count} connections"),
-        "j/k:move  /:search  a:add  ↵:connect",
+        hints,
     );
 }
 
-fn render_connections_header(frame: &mut Frame, area: Rect) {
+fn render_connections_header(frame: &mut Frame, area: Rect, hints: &[(&str, &str)]) {
     let title = Line::from(vec![
         Span::styled(" lazysql ", Style::new().fg(theme::BLUE).bold()),
         Span::styled(env!("CARGO_PKG_VERSION"), Style::new().fg(theme::FG3)),
@@ -116,7 +129,7 @@ fn render_connections_header(frame: &mut Frame, area: Rect) {
         .border_style(Style::new().fg(theme::BLUE));
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    widgets::hintbar::render(frame, inner, HINTS);
+    widgets::hintbar::render(frame, inner, hints);
 }
 
 fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -465,8 +478,38 @@ mod test {
         assert!(text.contains("lazysql"));
         assert!(text.contains("Connections"));
         assert!(text.contains("/:search"));
+        assert!(text.contains("^t:theme"));
         assert!(!text.contains("r:refresh"));
         assert!(!text.contains("/:filter"));
+    }
+
+    #[test]
+    fn connection_form_omits_theme_header_hint() {
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::new(vec![]);
+        state.connect.form_open = true;
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        let text = buffer_text(&terminal);
+        assert!(!text.contains("^t:theme"));
+        assert!(text.contains("^t:test"));
+    }
+
+    #[test]
+    fn connection_status_hints_switch_when_theme_picker_is_open() {
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::new(vec![]);
+        state.theme_picker.open();
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        let text = buffer_text(&terminal);
+        assert!(text.contains("type:filter"));
+        assert!(text.contains("select"));
+        assert!(text.contains("esc:cancel"));
     }
 
     #[test]
