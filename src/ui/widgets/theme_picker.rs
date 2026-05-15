@@ -123,7 +123,7 @@ fn footer_line(state: &AppState, filtered_count: usize) -> Line<'_> {
 #[cfg(test)]
 mod test {
     use crate::state::app::AppState;
-    
+
     use ratatui::{Terminal, backend::TestBackend};
 
     fn buffer_text(terminal: &Terminal<TestBackend>) -> String {

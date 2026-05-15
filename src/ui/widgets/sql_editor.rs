@@ -380,7 +380,6 @@ fn is_highlighted_keyword(keyword: Keyword) -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
-    
 
     fn highlighted_text(text: &str) -> Vec<String> {
         let colors = crate::themes::builtin::fallback_theme().colors;
