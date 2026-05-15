@@ -13,31 +13,25 @@ steps:
 
   integration-tests:
     image: rust:1.88
-    privileged: true
     depends_on:
       - checks
     environment:
-      PODMAN_USERNS: keep-id
-      PODMAN_IGNORE_CGROUPSV1_WARNING: "1"
+      TEST_DB_HOST: postgres
+      TEST_DB_PORT: "5432"
+      TEST_DB_USER: test_user
+      TEST_DB_NAME: db_test
+      TEST_DB_PASSWORD: vBnA46MVSs
+      PGPASSWORD: vBnA46MVSs
     commands:
       - |
         set -euo pipefail
         apt-get update
         apt-get install -y --no-install-recommends \
-          ca-certificates \
-          curl \
-          podman \
-          podman-compose \
-          uidmap \
-          slirp4netns \
-          fuse-overlayfs
+          postgresql-client
         rm -rf /var/lib/apt/lists/*
-      - |
-        set -euo pipefail
-        if ! command -v just >/dev/null 2>&1; then
-          cargo install just --locked
-        fi
-      - just test
+      - until pg_isready -h postgres -p 5432 -U test_user -d db_test; do sleep 1; done
+      - psql -h postgres -p 5432 -U test_user -d db_test -f init.sql
+      - cargo test -v
     when:
       event:
         - push
@@ -70,3 +64,11 @@ steps:
         - push
       branch:
         - main
+
+services:
+  - name: postgres
+    image: postgres:18
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: vBnA46MVSs
+      POSTGRES_DB: db_test
