@@ -28,3 +28,28 @@ impl MySqlRepo {
         })
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn test_config() -> crate::config::MySqlConfig {
+        crate::config::MySqlConfig {
+            name: None,
+            host: std::env::var("TEST_MYSQL_HOST").unwrap_or_else(|_| "localhost".to_string()),
+            user: std::env::var("TEST_MYSQL_USER").unwrap_or_else(|_| "test_user".to_string()),
+            db_name: std::env::var("TEST_MYSQL_DB").unwrap_or_else(|_| "db_test".to_string()),
+            port: std::env::var("TEST_MYSQL_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(3307),
+            password: std::env::var("TEST_MYSQL_PASSWORD").ok(),
+        }
+    }
+
+    #[tokio::test]
+    async fn connect() {
+        let repo = MySqlRepo::new(test_config()).await.unwrap();
+        println!("MySQL connection successful: {:?}", repo);
+    }
+}
