@@ -42,7 +42,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
 
     let context = state
         .selected_schema_name()
-        .map(|s| format!("database › {}", s))
+        .map(|s| format!("database › {s}"))
         .unwrap_or_else(|| "database".into());
 
     widgets::hintbar::render(frame, chunks[0], HINTS);
@@ -83,7 +83,7 @@ fn render_schemas_pane(frame: &mut Frame, area: Rect, state: &AppState) {
                 ]))
             } else {
                 ListItem::new(Line::from(Span::styled(
-                    format!("  {}", name),
+                    format!("  {name}"),
                     Style::new().fg(if is_active { theme::FG3 } else { theme::FG4 }),
                 )))
             }
@@ -129,7 +129,7 @@ fn render_tables_pane(frame: &mut Frame, area: Rect, state: &AppState) {
                 ]))
             } else {
                 ListItem::new(Line::from(Span::styled(
-                    format!("  {}", name),
+                    format!("  {name}"),
                     Style::new().fg(if is_active { theme::FG3 } else { theme::FG4 }),
                 )))
             }

@@ -28,8 +28,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         "—"
     };
     let title = format!(
-        " SQL Editor ─── {} ─── Ctrl+E execute · Enter newline · Tab indent · Esc close ",
-        driver
+        " SQL Editor ─── {driver} ─── Ctrl+E execute · Enter newline · Tab indent · Esc close "
     );
 
     let query = &state.sql_input.query;

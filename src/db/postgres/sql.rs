@@ -28,22 +28,16 @@ pub fn is_returning_query(sql: &str) -> bool {
 /// body as an extra CTE and select from that.
 fn build_pagination_sqls(sql: &str, limit: u16, offset: u64) -> (String, String) {
     if let Some((with_str, body)) = try_extract_cte(sql) {
-        let count_sql = format!(
-            "{}, _lazysql_count AS ({}) SELECT COUNT(*) FROM _lazysql_count",
-            with_str, body
-        );
+        let count_sql =
+            format!("{with_str}, _lazysql_count AS ({body}) SELECT COUNT(*) FROM _lazysql_count");
         let data_sql = format!(
-            "{}, _lazysql_data AS ({}) SELECT * FROM _lazysql_data LIMIT {} OFFSET {}",
-            with_str, body, limit, offset
+            "{with_str}, _lazysql_data AS ({body}) SELECT * FROM _lazysql_data LIMIT {limit} OFFSET {offset}"
         );
         return (count_sql, data_sql);
     }
     (
-        format!("SELECT COUNT(*) FROM ({}) AS _subq", sql),
-        format!(
-            "SELECT * FROM ({}) AS _subq LIMIT {} OFFSET {}",
-            sql, limit, offset
-        ),
+        format!("SELECT COUNT(*) FROM ({sql}) AS _subq"),
+        format!("SELECT * FROM ({sql}) AS _subq LIMIT {limit} OFFSET {offset}"),
     )
 }
 
@@ -56,7 +50,7 @@ fn try_extract_cte(sql: &str) -> Option<(String, String)> {
         return None;
     };
     let with = query.with.take()?;
-    Some((format!("{}", with), format!("{}", query)))
+    Some((format!("{with}"), format!("{query}")))
 }
 
 impl PostgresRepo {
@@ -403,9 +397,10 @@ fn row_value_to_string(row: &tokio_postgres::Row, idx: usize) -> Option<String> 
             .map(|b| b.iter().map(|byte| format!("{byte:02x}")).collect()),
         Type::OID => row.get::<_, Option<u32>>(idx).map(|v| v.to_string()),
         // For unknown types: try text decode; NULL → None, unsupported non-NULL → type placeholder
-        _ => row
-            .try_get::<_, Option<String>>(idx)
-            .unwrap_or_else(|_| Some(format!("<{}>", col_type.name()))),
+        _ => row.try_get::<_, Option<String>>(idx).unwrap_or_else(|_| {
+            let type_name = col_type.name();
+            Some(format!("<{type_name}>"))
+        }),
     }
 }
 

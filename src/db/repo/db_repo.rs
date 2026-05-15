@@ -15,10 +15,11 @@ pub enum DbError {
 impl std::fmt::Display for DbError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DbError::Postgres(e) => write!(f, "Postgres error: {}", e),
-            DbError::NotFound(msg) => write!(f, "Not found: {}", msg),
+            DbError::Postgres(e) => write!(f, "Postgres error: {e}"),
+            DbError::NotFound(msg) => write!(f, "Not found: {msg}"),
             DbError::ConnectionTimeout(timeout) => {
-                write!(f, "Connection timed out after {}s", timeout.as_secs())
+                let seconds = timeout.as_secs();
+                write!(f, "Connection timed out after {seconds}s")
             } // DbError::ConfigError(msg) => write!(f, "Configuration error: {}", msg),
         }
     }
