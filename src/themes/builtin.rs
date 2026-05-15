@@ -1,7 +1,8 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use crate::themes::palette::{RawTheme, Theme, ThemeError, gruvbox};
+use crate::themes::palette::{RawTheme, Theme, ThemeError, dracula, gruvbox};
 
 /// Loads built-in themes from the repository themes directory.
 pub fn load() -> Result<Vec<Theme>, ThemeError> {
@@ -10,10 +11,11 @@ pub fn load() -> Result<Vec<Theme>, ThemeError> {
 
 /// Loads all TOML themes from a directory.
 pub fn load_from_dir(path: &Path) -> Result<Vec<Theme>, ThemeError> {
+    let mut themes = default_themes_by_name();
     let entries = match fs::read_dir(path) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(vec![gruvbox()]);
+            return Ok(themes.into_values().collect());
         }
         Err(error) => {
             return Err(ThemeError(format!(
@@ -21,9 +23,6 @@ pub fn load_from_dir(path: &Path) -> Result<Vec<Theme>, ThemeError> {
             )));
         }
     };
-
-    let mut themes = Vec::new();
-    let mut found_toml = false;
 
     for entry in entries {
         let entry =
@@ -33,7 +32,6 @@ pub fn load_from_dir(path: &Path) -> Result<Vec<Theme>, ThemeError> {
             continue;
         }
 
-        found_toml = true;
         let content = fs::read_to_string(&path)
             .map_err(|error| ThemeError(format!("failed to read theme file: {error}")))?;
         let raw = toml::from_str::<RawTheme>(&content).map_err(|error| {
@@ -42,21 +40,22 @@ pub fn load_from_dir(path: &Path) -> Result<Vec<Theme>, ThemeError> {
         let theme = Theme::try_from(raw).map_err(|error| {
             ThemeError(format!("failed to load theme {}: {error}", path.display()))
         })?;
-        themes.push(theme);
+        themes.insert(theme.name.clone(), theme);
     }
 
-    if !found_toml {
-        return Ok(vec![gruvbox()]);
-    }
-
-    themes.sort_by(|left, right| left.name.cmp(&right.name));
-
-    Ok(themes)
+    Ok(themes.into_values().collect())
 }
 
 /// Finds a theme by exact case-sensitive name.
 pub fn find_by_name(themes: &[Theme], name: &str) -> Option<Theme> {
     themes.iter().find(|theme| theme.name == name).cloned()
+}
+
+fn default_themes_by_name() -> BTreeMap<String, Theme> {
+    [dracula(), gruvbox()]
+        .into_iter()
+        .map(|theme| (theme.name.clone(), theme))
+        .collect()
 }
 
 #[cfg(test)]
@@ -103,7 +102,7 @@ mod test {
             .map(|theme| theme.name.as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(names, vec!["alpha", "zeta"]);
+        assert_eq!(names, vec!["alpha", "dracula", "gruvbox", "zeta"]);
     }
 
     #[test]
@@ -113,7 +112,21 @@ mod test {
 
         let themes = load_from_dir(&missing_path).unwrap();
 
-        assert_eq!(themes.first().unwrap().name, "gruvbox");
+        assert!(find_by_name(&themes, "gruvbox").is_some());
+    }
+
+    #[test]
+    fn default_list_contains_gruvbox_and_dracula_when_directory_is_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing_path = dir.path().join("missing");
+
+        let themes = load_from_dir(&missing_path).unwrap();
+        let names = themes
+            .iter()
+            .map(|theme| theme.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["dracula", "gruvbox"]);
     }
 
     #[test]
@@ -162,6 +175,7 @@ mod test {
     fn find_by_name_matches_exact_case_only() {
         let themes = load_from_dir(std::path::Path::new("missing")).unwrap();
 
+        assert!(find_by_name(&themes, "dracula").is_some());
         assert!(find_by_name(&themes, "gruvbox").is_some());
         assert!(find_by_name(&themes, "Gruvbox").is_none());
     }

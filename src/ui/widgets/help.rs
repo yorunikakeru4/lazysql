@@ -25,8 +25,7 @@ fn sections_for(screen: &Screen) -> &'static [HelpSection] {
                 ("e", "edit selected"),
                 ("d", "delete selected"),
                 ("r", "refresh statuses"),
-                ("Ctrl+T", "test form"),
-                ("Ctrl+S", "save form"),
+                ("Ctrl+T", "theme"),
                 ("q", "quit"),
             ],
         }],
@@ -141,5 +140,26 @@ mod test {
                 .iter()
                 .any(|cell| cell.symbol() == "┌" && cell.fg == colors.aqua)
         );
+    }
+
+    #[test]
+    fn connect_help_shows_theme_shortcut_not_form_test_shortcut() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let colors = crate::themes::palette::gruvbox().colors;
+
+        terminal
+            .draw(|frame| render(frame, &Screen::Connect, &colors))
+            .unwrap();
+
+        let text = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.contains("Ctrl+T    theme"));
+        assert!(!text.contains("test form"));
     }
 }

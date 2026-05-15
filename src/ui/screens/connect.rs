@@ -103,9 +103,11 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     render_details_panel(frame, chunks[details_idx], state);
     let connection_count = state.connections_config.len();
     let hints = if state.theme_picker.open {
-        "type:filter  ↵:select  esc:cancel"
+        "type:filter  ↵:select  esc:cancel".to_string()
+    } else if let Some(error) = &state.theme_error {
+        format!("theme:{error}  j/k:move  /:search  a:add  ↵:connect  ^t:theme")
     } else {
-        "j/k:move  /:search  a:add  ↵:connect  ^t:theme"
+        "j/k:move  /:search  a:add  ↵:connect  ^t:theme".to_string()
     };
     widgets::statusbar::render(
         frame,
@@ -113,7 +115,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         &state.mode,
         &state.theme.colors,
         &format!("lazysql — {connection_count} connections"),
-        hints,
+        &hints,
     );
 }
 
@@ -523,6 +525,20 @@ mod test {
         assert!(text.contains("type:filter"));
         assert!(text.contains("select"));
         assert!(text.contains("esc:cancel"));
+    }
+
+    #[test]
+    fn connection_status_hints_show_theme_error_when_picker_is_closed() {
+        let backend = TestBackend::new(120, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::new(vec![]);
+        state.theme_error = Some("unknown theme: missing".to_string());
+
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+
+        let text = buffer_text(&terminal);
+        assert!(text.contains("theme:unknown theme: missing"));
+        assert!(!text.contains("Select theme"));
     }
 
     #[test]
