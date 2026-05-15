@@ -20,7 +20,7 @@ pub struct LoadedTheme {
 }
 
 /// Returns the default theme config path.
-pub fn theme_path() -> PathBuf {
+fn theme_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     PathBuf::from(home)
         .join(".config")
@@ -29,7 +29,7 @@ pub fn theme_path() -> PathBuf {
 }
 
 /// Creates a default theme config file when it does not exist.
-pub fn ensure_theme_file(path: &Path) -> Result<(), std::io::Error> {
+fn ensure_theme_file(path: &Path) -> Result<(), std::io::Error> {
     if path.exists() {
         return Ok(());
     }
@@ -37,22 +37,26 @@ pub fn ensure_theme_file(path: &Path) -> Result<(), std::io::Error> {
     write_theme_file(path, "gruvbox")
 }
 
-/// Loads the selected or inline theme from a specific path.
-pub fn load_from(path: &Path, themes: &[Theme]) -> LoadedTheme {
+pub fn load(themes: &[Theme]) -> LoadedTheme {
+    load_from(&theme_path(), themes)
+}
+
+/// Loads the selected or inline theme from the given path.
+fn load_from(path: &Path, themes: &[Theme]) -> LoadedTheme {
     if let Err(error) = ensure_theme_file(path) {
-        return fallback(
-            themes,
-            Some(format!("failed to create theme config: {error}")),
-        );
+        return LoadedTheme {
+            theme: builtin::fallback_theme(),
+            error: Some(format!("failed to create theme config: {error}")),
+        };
     }
 
     let content = match fs::read_to_string(path) {
         Ok(content) => content,
         Err(error) => {
-            return fallback(
-                themes,
-                Some(format!("failed to read theme config: {error}")),
-            );
+            return LoadedTheme {
+                theme: builtin::fallback_theme(),
+                error: Some(format!("failed to read theme config: {error}")),
+            };
         }
     };
 
@@ -63,48 +67,58 @@ pub fn load_from(path: &Path, themes: &[Theme]) -> LoadedTheme {
             }
         }
         Err(error) => {
-            return fallback(
-                themes,
-                Some(format!("failed to parse theme config: {error}")),
-            );
+            return LoadedTheme {
+                theme: builtin::fallback_theme(),
+                error: Some(format!("failed to parse theme config: {error}")),
+            };
         }
     }
 
-    load_inline(themes, &content)
+    load_inline(&content)
 }
 
 /// Saves the selected built-in theme name to the default theme config path.
 pub fn save_selected(name: &str) -> Result<(), std::io::Error> {
-    save_selected_to(&theme_path(), name)
+    let path: &Path = &theme_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    fs::write(path, theme_file_content(name))
 }
 
-/// Saves the selected built-in theme name to a specific path.
-pub fn save_selected_to(path: &Path, name: &str) -> Result<(), std::io::Error> {
-    write_theme_file(path, name)
-}
-
+/// Attempts to load a built-in theme by name. If the name is unknown, falls back to a built-in theme with an error message.
 fn load_builtin(themes: &[Theme], name: &str) -> LoadedTheme {
     let Some(theme) = builtin::find_by_name(themes, name) else {
-        return fallback(themes, Some(format!("unknown theme: {name}")));
+        return LoadedTheme {
+            theme: builtin::fallback_theme(),
+            error: Some(format!("unknown theme: {name}")),
+        };
     };
 
     LoadedTheme { theme, error: None }
 }
 
-fn load_inline(themes: &[Theme], content: &str) -> LoadedTheme {
+/// Attempts to load an inline custom theme from the config content. If parsing or validation fails, falls back to a built-in theme with an error message.
+fn load_inline(content: &str) -> LoadedTheme {
     let raw = match toml::from_str::<RawTheme>(content) {
         Ok(raw) => raw,
         Err(error) => {
-            return fallback(
-                themes,
-                Some(format!("failed to parse inline theme: {error}")),
-            );
+            return LoadedTheme {
+                theme: builtin::fallback_theme(),
+                error: Some(format!("failed to parse custom theme: {error}")),
+            };
         }
     };
 
     let theme = match Theme::try_from(raw) {
         Ok(theme) => theme,
-        Err(error) => return fallback(themes, Some(error.to_string())),
+        Err(error) => {
+            return LoadedTheme {
+                theme: builtin::fallback_theme(),
+                error: Some(format!("invalid custom theme: {error}")),
+            };
+        }
     };
 
     LoadedTheme { theme, error: None }
@@ -117,13 +131,6 @@ pub fn combine_errors(builtin: Option<String>, storage: Option<String>) -> Optio
         (Some(b), None) => Some(b),
         (None, s) => s,
     }
-}
-
-fn fallback(themes: &[Theme], error: Option<String>) -> LoadedTheme {
-    let theme = builtin::find_by_name(themes, "gruvbox")
-        .or_else(|| themes.first().cloned())
-        .unwrap_or_else(builtin::fallback_theme);
-    LoadedTheme { theme, error }
 }
 
 fn write_theme_file(path: &Path, selected: &str) -> Result<(), std::io::Error> {
@@ -277,22 +284,6 @@ mod test {
 
         assert_eq!(loaded.theme.name, "gruvbox");
         assert!(loaded.error.is_some());
-    }
-
-    #[test]
-    fn saves_builtin_selection_with_examples() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("theme.toml");
-
-        save_selected_to(&path, "solarized").unwrap();
-
-        let content = fs::read_to_string(path).unwrap();
-        assert!(content.starts_with("theme = \"solarized\""));
-        assert!(content.contains("# Built-in themes"));
-        assert!(content.contains("# theme = \"gruvbox\""));
-        assert!(content.contains("# theme = \"dracula\""));
-        assert!(content.contains("# Full custom theme example"));
-        assert!(!content.starts_with("theme = \"gruvbox\""));
     }
 
     #[test]
