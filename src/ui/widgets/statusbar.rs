@@ -34,10 +34,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, mode: &AppMode, context: &st
         Style::new().fg(theme::FG0),
     ));
 
-    frame.render_widget(
-        Paragraph::new(Line::from(spans)).style(Style::new().bg(theme::BG1)),
-        area,
-    );
+    frame.render_widget(Paragraph::new(Line::from(spans)).style(Style::new()), area);
 }
 
 fn hint_spans(hints: &str) -> Vec<Span<'static>> {

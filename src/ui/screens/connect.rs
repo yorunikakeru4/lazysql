@@ -298,7 +298,7 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
 
     if state.form.focused != 5 {
         let cursor_x = field_rows[state.form.focused].x
-            + 22
+            + 21
             + state.form.values[state.form.focused].len() as u16;
         let max_x = field_rows[state.form.focused]
             .x
