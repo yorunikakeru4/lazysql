@@ -325,7 +325,7 @@ impl AppState {
 
     /// Loads all schemas from the active connection into `schemas_raw`.
     pub async fn load_schemas(&mut self) -> Result<(), DbError> {
-        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+        let Some(repo) = &self.current_db else {
             return Err(DbError::NotFound("No active connection".to_string()));
         };
         self.schemas_raw = repo.get_schemas().await?;
@@ -337,7 +337,7 @@ impl AppState {
     /// Loads full field details for a table by explicit name (used when the
     /// table was selected from a filtered list).
     pub async fn load_table_by_name(&mut self, name: String) -> Result<(), DbError> {
-        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+        let Some(repo) = &self.current_db else {
             return Err(DbError::NotFound("No active connection".to_string()));
         };
         let mut tables = repo.get_tables(vec![name]).await?;
@@ -347,7 +347,7 @@ impl AppState {
 
     /// Loads full schema details for the selected table into `table_details`.
     pub async fn load_table_details(&mut self, schema: &str, table: &str) -> Result<(), DbError> {
-        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+        let Some(repo) = &self.current_db else {
             return Err(DbError::NotFound("No active connection".to_string()));
         };
         self.table_details = Some(repo.get_table_details(schema, table).await?);
@@ -362,7 +362,7 @@ impl AppState {
             return;
         }
 
-        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+        let Some(repo) = &self.current_db else {
             self.sql_input.result = Some(SqlResult::Error("No active connection".to_string()));
             return;
         };
@@ -403,7 +403,7 @@ impl AppState {
         self.records = RecordsState::for_table(schema.clone(), table_name.clone());
         self.records.rows_per_page = table_rpp;
 
-        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+        let Some(repo) = &self.current_db else {
             return Err(DbError::NotFound("No active connection".to_string()));
         };
 
@@ -426,7 +426,7 @@ impl AppState {
 
     /// Fetches the current page of records based on offset.
     pub async fn fetch_records_page(&mut self) -> Result<(), DbError> {
-        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+        let Some(repo) = &self.current_db else {
             return Err(DbError::NotFound("No active connection".to_string()));
         };
 
@@ -501,7 +501,7 @@ impl AppState {
         self.records = RecordsState::for_query(query.clone());
         self.records.rows_per_page = table_rpp;
 
-        let Some(DbClient::Postgres(repo)) = &self.current_db else {
+        let Some(repo) = &self.current_db else {
             return Err(DbError::NotFound("No active connection".to_string()));
         };
 
@@ -573,7 +573,7 @@ pub(crate) fn format_sql_error(error: &DbError) -> String {
 }
 
 async fn execute_sql_rows(
-    repo: &crate::db::postgres::init::PostgresRepo,
+    repo: &impl Database,
     query: &str,
     page: SqlPage,
 ) -> Result<FetchRowsResult, DbError> {

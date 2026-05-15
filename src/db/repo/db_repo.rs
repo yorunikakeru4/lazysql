@@ -1,6 +1,10 @@
 use crate::{
     config::ConnectConfig,
     db::{mysql::init::MySqlRepo, postgres::init::PostgresRepo},
+    db::repo::sql_repo::{
+        Database, FetchRowsResult, SqlExecuteOptions, SqlExecuteResult, Table, TableDetails,
+        TableRef,
+    },
 };
 use std::time::Duration;
 
@@ -35,9 +39,56 @@ pub enum DbClient {
     /// PostgreSQL client implementation.
     Postgres(PostgresRepo),
     /// MySQL client implementation.
-    #[allow(dead_code)]
     MySql(MySqlRepo),
 }
+
+impl Database for DbClient {
+    async fn get_schemas(&self) -> Result<Vec<TableRef>, DbError> {
+        match self {
+            DbClient::Postgres(r) => r.get_schemas().await,
+            DbClient::MySql(r) => r.get_schemas().await,
+        }
+    }
+
+    async fn get_tables(&self, table_names: Vec<String>) -> Result<Vec<Table>, DbError> {
+        match self {
+            DbClient::Postgres(r) => r.get_tables(table_names).await,
+            DbClient::MySql(r) => r.get_tables(table_names).await,
+        }
+    }
+
+    async fn execute_sql_with_options(
+        &self,
+        sql: &str,
+        options: Option<SqlExecuteOptions>,
+    ) -> Result<SqlExecuteResult, DbError> {
+        match self {
+            DbClient::Postgres(r) => r.execute_sql_with_options(sql, options).await,
+            DbClient::MySql(r) => r.execute_sql_with_options(sql, options).await,
+        }
+    }
+
+    async fn fetch_rows(
+        &self,
+        schema: &str,
+        table: &str,
+        limit: u16,
+        offset: u64,
+    ) -> Result<FetchRowsResult, DbError> {
+        match self {
+            DbClient::Postgres(r) => r.fetch_rows(schema, table, limit, offset).await,
+            DbClient::MySql(r) => r.fetch_rows(schema, table, limit, offset).await,
+        }
+    }
+
+    async fn get_table_details(&self, schema: &str, table: &str) -> Result<TableDetails, DbError> {
+        match self {
+            DbClient::Postgres(r) => r.get_table_details(schema, table).await,
+            DbClient::MySql(r) => r.get_table_details(schema, table).await,
+        }
+    }
+}
+
 impl DbClient {
     /// Opens a database client from a saved connection config.
     pub async fn new(connect_config: ConnectConfig) -> Result<Self, DbError> {

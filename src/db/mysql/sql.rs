@@ -262,24 +262,42 @@ impl Database for MySqlRepo {
         let esc_table = table.replace('`', "``");
         let mut conn = self.conn.lock().await;
 
-        // 1. Columns + constraints
+        // 1. Columns + constraints (one row per column — correlated subqueries avoid
+        //    the fan-out caused by MySQL's shared 'PRIMARY' constraint name across tables)
         let col_rows: Vec<mysql_async::Row> = conn
             .exec(
                 "SELECT
                      c.column_name,
                      c.data_type,
                      c.is_nullable,
-                     tc.constraint_type,
-                     kcu.referenced_table_name,
+                     (SELECT tc2.constraint_type
+                      FROM information_schema.key_column_usage kcu2
+                      JOIN information_schema.table_constraints tc2
+                          ON  tc2.constraint_name = kcu2.constraint_name
+                          AND tc2.table_schema    = kcu2.table_schema
+                          AND tc2.table_name      = kcu2.table_name
+                      WHERE kcu2.table_schema = c.table_schema
+                        AND kcu2.table_name   = c.table_name
+                        AND kcu2.column_name  = c.column_name
+                      ORDER BY CASE tc2.constraint_type
+                          WHEN 'PRIMARY KEY' THEN 1
+                          WHEN 'UNIQUE'      THEN 2
+                          WHEN 'FOREIGN KEY' THEN 3
+                          ELSE 4 END ASC
+                      LIMIT 1) AS constraint_type,
+                     (SELECT kcu2.referenced_table_name
+                      FROM information_schema.key_column_usage kcu2
+                      JOIN information_schema.table_constraints tc2
+                          ON  tc2.constraint_name = kcu2.constraint_name
+                          AND tc2.table_schema    = kcu2.table_schema
+                          AND tc2.table_name      = kcu2.table_name
+                      WHERE kcu2.table_schema   = c.table_schema
+                        AND kcu2.table_name     = c.table_name
+                        AND kcu2.column_name    = c.column_name
+                        AND tc2.constraint_type = 'FOREIGN KEY'
+                      LIMIT 1) AS referenced_table_name,
                      c.column_default
                  FROM information_schema.columns c
-                 LEFT JOIN information_schema.key_column_usage kcu
-                     ON kcu.table_schema = c.table_schema
-                     AND kcu.table_name  = c.table_name
-                     AND kcu.column_name = c.column_name
-                 LEFT JOIN information_schema.table_constraints tc
-                     ON tc.constraint_name = kcu.constraint_name
-                     AND tc.table_schema   = kcu.table_schema
                  WHERE c.table_schema = ? AND c.table_name = ?
                  ORDER BY c.ordinal_position",
                 (schema.to_string(), table.to_string()),
