@@ -1,0 +1,2 @@
+[env]
+PKG_CONFIG_PATH = "/nix/store/cqkz127l4l98xgp7p6y1j2cqvyx0w3jl-openssl-3.6.2-dev/lib/pkgconfig"
