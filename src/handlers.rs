@@ -10,6 +10,7 @@ use crate::state::connection::{ActivePane, FormState};
 use crate::state::mode::AppMode;
 use crate::state::navigation::{Router, Screen};
 use crate::state::sql_input::SqlResult;
+use crate::themes;
 
 /// Dispatches a key event to the appropriate screen handler.
 /// Returns `false` when the application should quit.
@@ -19,6 +20,10 @@ pub async fn handle(
     router: &mut Router,
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
 ) -> std::io::Result<bool> {
+    if handle_theme_picker(key, state, themes::storage::save_selected) {
+        return Ok(true);
+    }
+
     if state.mode == AppMode::Help {
         if matches!(key.code, KeyCode::Char('?') | KeyCode::Esc) {
             state.mode = AppMode::Normal;
@@ -70,6 +75,39 @@ pub async fn handle(
     }
 
     Ok(true)
+}
+
+// ─── Theme picker ────────────────────────────────────────────────────────────
+
+fn handle_theme_picker(
+    key: KeyEvent,
+    state: &mut AppState,
+    mut save_selected: impl FnMut(&str) -> Result<(), std::io::Error>,
+) -> bool {
+    if !state.theme_picker.open {
+        return false;
+    }
+
+    match key.code {
+        KeyCode::Esc => state.theme_picker.cancel(),
+        KeyCode::Backspace => state.theme_picker.pop_query(),
+        KeyCode::Down | KeyCode::Char('j') => state.theme_picker.move_next(),
+        KeyCode::Up | KeyCode::Char('k') => state.theme_picker.move_prev(),
+        KeyCode::Enter => {
+            if let Some(name) = state.theme_picker.selected_name().map(str::to_string)
+                && state.apply_theme_by_name(&name)
+            {
+                state.theme_error = save_selected(&name).err().map(|error| error.to_string());
+            }
+            state.theme_picker.cancel();
+        }
+        KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            state.theme_picker.push_query(c);
+        }
+        _ => {}
+    }
+
+    true
 }
 
 // ─── Connect error popup ──────────────────────────────────────────────────────
@@ -257,6 +295,13 @@ async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router
         KeyCode::Char('/') => {
             state.search.open();
             state.mode = AppMode::Search;
+        }
+        KeyCode::Char('t')
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                && state.mode == AppMode::Normal
+                && state.connect.error.is_none() =>
+        {
+            state.theme_picker.open();
         }
         KeyCode::Char('a') => {
             state.form.reset();
@@ -802,5 +847,94 @@ mod test {
         assert_eq!(state.connection_status(0), ConnectionStatus::Online);
         assert!(!state.connect.form_open);
         assert_eq!(state.mode, AppMode::Normal);
+    }
+
+    #[tokio::test]
+    async fn ctrl_t_opens_theme_picker_on_connect_screen() {
+        let mut state = AppState::new(vec![]);
+        let mut router = Router::new();
+
+        handle_connect(
+            KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL),
+            &mut state,
+            &mut router,
+        )
+        .await;
+
+        assert!(state.theme_picker.open);
+    }
+
+    #[tokio::test]
+    async fn ctrl_t_does_not_open_theme_picker_when_form_is_open() {
+        let mut state = AppState::new(vec![]);
+        let mut router = Router::new();
+        state.connect.form_open = true;
+        state.form.values[0] = "local".to_string();
+        state.form.focused = 0;
+
+        handle_connect(
+            KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL),
+            &mut state,
+            &mut router,
+        )
+        .await;
+
+        assert!(!state.theme_picker.open);
+        assert_eq!(state.form.values[0], "local");
+        assert!(state.form.error.is_some());
+        assert_eq!(state.connect.draft_status, None);
+    }
+
+    #[test]
+    fn escape_closes_theme_picker() {
+        let mut state = AppState::new(vec![]);
+        state.theme_picker.open();
+
+        let consumed = handle_theme_picker(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &mut state,
+            |_| Ok(()),
+        );
+
+        assert!(consumed);
+        assert!(!state.theme_picker.open);
+    }
+
+    #[test]
+    fn enter_applies_selected_theme() {
+        let mut dracula = crate::themes::palette::gruvbox();
+        dracula.name = "dracula".to_string();
+        let mut state = AppState::new_with_theme(
+            vec![],
+            crate::themes::palette::gruvbox(),
+            vec![crate::themes::palette::gruvbox(), dracula],
+            None,
+        );
+        state.theme_picker.open();
+
+        let consumed = handle_theme_picker(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut state,
+            |_| Ok(()),
+        );
+
+        assert!(consumed);
+        assert_eq!(state.theme.name, "dracula");
+        assert!(!state.theme_picker.open);
+    }
+
+    #[test]
+    fn typing_filter_updates_theme_picker_query() {
+        let mut state = AppState::new(vec![]);
+        state.theme_picker.open();
+
+        let consumed = handle_theme_picker(
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE),
+            &mut state,
+            |_| Ok(()),
+        );
+
+        assert!(consumed);
+        assert_eq!(state.theme_picker.query, "d");
     }
 }

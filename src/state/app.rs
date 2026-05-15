@@ -94,6 +94,22 @@ impl AppState {
         Self::new_with_theme(connections, gruvbox(), vec![gruvbox()], None)
     }
 
+    /// Applies an exact theme name from the available theme list.
+    pub fn apply_theme_by_name(&mut self, name: &str) -> bool {
+        let Some(theme) = self
+            .available_themes
+            .iter()
+            .find(|theme| theme.name == name)
+            .cloned()
+        else {
+            return false;
+        };
+
+        self.theme = theme;
+        self.theme_error = None;
+        true
+    }
+
     /// Unique schema names sorted alphabetically.
     pub fn schema_names(&self) -> Vec<String> {
         self.schemas_raw
@@ -168,6 +184,7 @@ impl AppState {
     }
 
     /// Tests the unsaved connection form draft and stores its reachability status.
+    #[allow(dead_code)]
     pub async fn test_form_connection(&mut self) {
         match self.form.to_postgres_config() {
             Ok(cfg) => {
@@ -670,6 +687,34 @@ mod test {
             vec!["dracula", "gruvbox"]
         );
         assert_eq!(state.theme_error, None);
+    }
+
+    #[test]
+    fn apply_theme_by_name_updates_active_theme_and_clears_error() {
+        let mut dracula = gruvbox();
+        dracula.name = "dracula".to_string();
+        let mut state = AppState::new_with_theme(
+            vec![pg_connect()],
+            gruvbox(),
+            vec![gruvbox(), dracula],
+            Some("failed".to_string()),
+        );
+
+        let applied = state.apply_theme_by_name("dracula");
+
+        assert!(applied);
+        assert_eq!(state.theme.name, "dracula");
+        assert_eq!(state.theme_error, None);
+    }
+
+    #[test]
+    fn apply_theme_by_name_returns_false_for_unknown_theme() {
+        let mut state = AppState::new(vec![pg_connect()]);
+
+        let applied = state.apply_theme_by_name("missing");
+
+        assert!(!applied);
+        assert_eq!(state.theme.name, "gruvbox");
     }
 
     #[test]
