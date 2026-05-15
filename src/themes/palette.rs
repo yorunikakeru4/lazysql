@@ -82,6 +82,29 @@ pub fn parse_hex_color(value: &str) -> Result<Color, ThemeError> {
     Ok(Color::Rgb(red, green, blue))
 }
 
+/// Returns the compiled gruvbox fallback theme.
+pub fn gruvbox() -> Theme {
+    Theme {
+        name: "gruvbox".to_string(),
+        colors: ThemeColors {
+            bg0: Color::Rgb(0x1d, 0x20, 0x21),
+            bg1: Color::Rgb(0x28, 0x28, 0x28),
+            bg3: Color::Rgb(0x3c, 0x38, 0x36),
+            bg_sel: Color::Rgb(0x50, 0x49, 0x45),
+            fg0: Color::Rgb(0xeb, 0xdb, 0xb2),
+            fg3: Color::Rgb(0xa8, 0x99, 0x84),
+            fg4: Color::Rgb(0x7c, 0x6f, 0x64),
+            red: Color::Rgb(0xfb, 0x49, 0x34),
+            green: Color::Rgb(0xb8, 0xbb, 0x26),
+            yellow: Color::Rgb(0xfa, 0xbd, 0x2f),
+            blue: Color::Rgb(0x83, 0xa5, 0x98),
+            aqua: Color::Rgb(0x8e, 0xc0, 0x7c),
+            orange: Color::Rgb(0xfe, 0x80, 0x19),
+            purple: Color::Rgb(0xd3, 0x86, 0x9b),
+        },
+    }
+}
+
 impl TryFrom<RawTheme> for Theme {
     type Error = ThemeError;
 
