@@ -22,20 +22,16 @@ pub fn is_returning_query(sql: &str) -> bool {
     matches!(stmt, Statement::Query(_) | Statement::Explain { .. })
 }
 
-/// Builds (count_sql, data_sql) for pagination. Handles CTEs via MySQL dialect.
-fn build_pagination_sqls(sql: &str, limit: u16, offset: u64) -> (String, String) {
+/// Builds data_sql for pagination. Handles CTEs via MySQL dialect.
+fn build_pagination_sqls(sql: &str, limit: u16, offset: u64) -> String {
     if let Some((with_str, body)) = try_extract_cte(sql) {
-        let count_sql =
-            format!("{with_str}, _lazysql_count AS ({body}) SELECT COUNT(*) FROM _lazysql_count");
-        let data_sql = format!(
-            "{with_str}, _lazysql_data AS ({body}) SELECT * FROM _lazysql_data LIMIT {limit} OFFSET {offset}"
-        );
-        return (count_sql, data_sql);
+        format!(
+            "{with_str}, _lazysql_data AS ({body}) \
+             SELECT * FROM _lazysql_data LIMIT {limit} OFFSET {offset}"
+        )
+    } else {
+        format!("SELECT * FROM ({sql}) AS _subq LIMIT {limit} OFFSET {offset}")
     }
-    (
-        format!("SELECT COUNT(*) FROM ({sql}) AS _subq"),
-        format!("SELECT * FROM ({sql}) AS _subq LIMIT {limit} OFFSET {offset}"),
-    )
 }
 
 fn try_extract_cte(sql: &str) -> Option<(String, String)> {
@@ -102,30 +98,17 @@ impl MySqlRepo {
         sql: &str,
         page: Option<SqlPage>,
     ) -> Result<FetchRowsResult, DbError> {
-        let mut conn = self.conn.lock().await;
-        let Some(page) = page else {
-            let mut qr = conn.query_iter(sql).await.map_err(DbError::MySql)?;
-            let columns: Vec<ColumnInfo> = qr
-                .columns_ref()
-                .iter()
-                .map(|c| ColumnInfo {
-                    name: c.name_str().to_string(),
-                })
-                .collect();
-            let rows: Vec<mysql_async::Row> = qr.collect().await.map_err(DbError::MySql)?;
-            let data = rows_to_data(rows);
-            return Ok(FetchRowsResult {
-                columns,
-                total_count: data.len() as u64,
-                rows: data,
-            });
-        };
+        let page = page.unwrap_or(SqlPage {
+            limit: 100,
+            offset: 0,
+        });
 
-        let (count_sql, data_sql) = build_pagination_sqls(sql, page.limit, page.offset);
-        let counts: Vec<u64> = conn.query(&count_sql).await.map_err(DbError::MySql)?;
-        let total_count = counts.into_iter().next().unwrap_or(0);
+        let mut conn = self.conn.lock().await;
+
+        let data_sql = build_pagination_sqls(sql, page.limit, page.offset);
 
         let mut qr = conn.query_iter(&data_sql).await.map_err(DbError::MySql)?;
+
         let columns: Vec<ColumnInfo> = qr
             .columns_ref()
             .iter()
@@ -133,12 +116,14 @@ impl MySqlRepo {
                 name: c.name_str().to_string(),
             })
             .collect();
+
         let rows: Vec<mysql_async::Row> = qr.collect().await.map_err(DbError::MySql)?;
+        let data = rows_to_data(rows);
 
         Ok(FetchRowsResult {
             columns,
-            rows: rows_to_data(rows),
-            total_count,
+            total_count: page.offset + data.len() as u64,
+            rows: data,
         })
     }
 }
@@ -226,10 +211,12 @@ impl Database for MySqlRepo {
         let esc_table = table.replace('`', "``");
         let mut conn = self.conn.lock().await;
 
-        // Probe: get column metadata and detect id column
+        // 1. Column metadata + detect id column
         let probe_sql = format!("SELECT * FROM `{esc_schema}`.`{esc_table}` LIMIT 0");
         let probe = conn.query_iter(&probe_sql).await.map_err(DbError::MySql)?;
+
         let has_id = probe.columns_ref().iter().any(|c| c.name_str() == "id");
+
         let columns: Vec<ColumnInfo> = probe
             .columns_ref()
             .iter()
@@ -237,18 +224,33 @@ impl Database for MySqlRepo {
                 name: c.name_str().to_string(),
             })
             .collect();
+
         probe.drop_result().await.map_err(DbError::MySql)?;
 
-        // Count
-        let count_sql = format!("SELECT COUNT(*) FROM `{esc_schema}`.`{esc_table}`");
-        let counts: Vec<u64> = conn.query(count_sql).await.map_err(DbError::MySql)?;
-        let total_count = counts.into_iter().next().unwrap_or(0);
+        // 2. Approximate row count, fast for huge InnoDB tables
+        let count_rows: Vec<mysql_async::Row> = conn
+            .exec(
+                "SELECT table_rows
+             FROM information_schema.tables
+             WHERE table_schema = ? AND table_name = ?",
+                (schema.to_string(), table.to_string()),
+            )
+            .await
+            .map_err(DbError::MySql)?;
 
-        // Data
+        let total_count = count_rows
+            .into_iter()
+            .next()
+            .and_then(|mut r| r.take::<Option<u64>, _>(0).flatten())
+            .unwrap_or(0);
+
+        // 3. Data
         let order = if has_id { " ORDER BY `id`" } else { "" };
+
         let data_sql = format!(
             "SELECT * FROM `{esc_schema}`.`{esc_table}`{order} LIMIT {limit} OFFSET {offset}"
         );
+
         let rows: Vec<mysql_async::Row> = conn.query(data_sql).await.map_err(DbError::MySql)?;
 
         Ok(FetchRowsResult {
@@ -257,9 +259,9 @@ impl Database for MySqlRepo {
             total_count,
         })
     }
+
+    /// Fetches detailed metadata for a table, including columns with constraints, row count, size, indexes, and inbound FK refs.
     async fn get_table_details(&self, schema: &str, table: &str) -> Result<TableDetails, DbError> {
-        let esc_schema = schema.replace('`', "``");
-        let esc_table = table.replace('`', "``");
         let mut conn = self.conn.lock().await;
 
         // 1. Columns + constraints (one row per column — correlated subqueries avoid
@@ -320,9 +322,20 @@ impl Database for MySqlRepo {
             .collect();
 
         // 2. Row count (exact)
-        let count_sql = format!("SELECT COUNT(*) FROM `{esc_schema}`.`{esc_table}`");
-        let counts: Vec<i64> = conn.query(count_sql).await.map_err(DbError::MySql)?;
-        let row_count: Option<i64> = counts.into_iter().next();
+        let count_rows: Vec<mysql_async::Row> = conn
+            .exec(
+                "SELECT table_rows
+         FROM information_schema.tables
+         WHERE table_schema = ? AND table_name = ?",
+                (schema.to_string(), table.to_string()),
+            )
+            .await
+            .map_err(DbError::MySql)?;
+
+        let row_count: Option<i64> = count_rows
+            .into_iter()
+            .next()
+            .and_then(|mut r| r.take::<Option<i64>, _>(0).flatten());
 
         // 3. Size (data + indexes in bytes → human-readable)
         let size_rows: Vec<mysql_async::Row> = conn

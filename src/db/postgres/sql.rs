@@ -21,24 +21,16 @@ pub fn is_returning_query(sql: &str) -> bool {
     matches!(stmt, Statement::Query(_) | Statement::Explain { .. })
 }
 
-/// Builds (count_sql, data_sql) for pagination.
-///
-/// CTE queries (`WITH ... SELECT`) cannot be wrapped in a subquery — PostgreSQL
-/// forbids `SELECT COUNT(*) FROM (WITH ...) AS s`. Instead we append the query
-/// body as an extra CTE and select from that.
-fn build_pagination_sqls(sql: &str, limit: u16, offset: u64) -> (String, String) {
+/// Builds a paginated SQL query by wrapping the original SQL. If the original SQL is a CTE query, the wrapper preserves the WITH clause to avoid issues with CTEs and pagination.
+fn build_pagination_sqls(sql: &str, limit: u16, offset: u64) -> String {
     if let Some((with_str, body)) = try_extract_cte(sql) {
-        let count_sql =
-            format!("{with_str}, _lazysql_count AS ({body}) SELECT COUNT(*) FROM _lazysql_count");
-        let data_sql = format!(
-            "{with_str}, _lazysql_data AS ({body}) SELECT * FROM _lazysql_data LIMIT {limit} OFFSET {offset}"
-        );
-        return (count_sql, data_sql);
+        format!(
+            "{with_str}, _lazysql_data AS ({body}) \
+             SELECT * FROM _lazysql_data LIMIT {limit} OFFSET {offset}"
+        )
+    } else {
+        format!("SELECT * FROM ({sql}) AS _subq LIMIT {limit} OFFSET {offset}")
     }
-    (
-        format!("SELECT COUNT(*) FROM ({sql}) AS _subq"),
-        format!("SELECT * FROM ({sql}) AS _subq LIMIT {limit} OFFSET {offset}"),
-    )
 }
 
 /// If `sql` is a CTE query, returns `(with_clause_str, body_str)` with the
@@ -59,47 +51,33 @@ impl PostgresRepo {
         sql: &str,
         page: Option<SqlPage>,
     ) -> Result<FetchRowsResult, DbError> {
-        let Some(page) = page else {
-            let stmt = self.client.prepare(sql).await.map_err(DbError::Postgres)?;
-            let columns = columns_from_statement(&stmt);
-            let rows = self
-                .client
-                .query(&stmt, &[])
-                .await
-                .map_err(DbError::Postgres)?;
-            let data = rows_to_data(&rows);
+        let page = page.unwrap_or(SqlPage {
+            limit: 100,
+            offset: 0,
+        });
 
-            return Ok(FetchRowsResult {
-                columns,
-                total_count: data.len() as u64,
-                rows: data,
-            });
-        };
-
-        let (count_sql, data_sql) = build_pagination_sqls(sql, page.limit, page.offset);
-        let count_row = self
-            .client
-            .query_one(&count_sql, &[])
-            .await
-            .map_err(DbError::Postgres)?;
-        let total_count: i64 = count_row.get(0);
+        let data_sql = build_pagination_sqls(sql, page.limit, page.offset);
 
         let stmt = self
             .client
             .prepare(&data_sql)
             .await
             .map_err(DbError::Postgres)?;
+
         let columns = columns_from_statement(&stmt);
+
         let rows = self
             .client
             .query(&stmt, &[])
             .await
             .map_err(DbError::Postgres)?;
 
+        let data = rows_to_data(&rows);
+
         Ok(FetchRowsResult {
             columns,
-            rows: rows_to_data(&rows),
-            total_count: u64::try_from(total_count).unwrap_or(0),
+            total_count: page.offset + data.len() as u64,
+            rows: data,
         })
     }
 }
@@ -190,13 +168,22 @@ impl Database for PostgresRepo {
         let esc_table = table.replace('"', "\"\"");
 
         // Count
-        let count_sql = format!("SELECT COUNT(*) FROM \"{esc_schema}\".\"{esc_table}\"");
-        let count_row = self
+        let stat_row = self
             .client
-            .query_one(&count_sql, &[])
+            .query_opt(
+                "SELECT reltuples::bigint
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = $1 AND c.relname = $2",
+                &[&schema, &table],
+            )
             .await
             .map_err(DbError::Postgres)?;
-        let total_count: i64 = count_row.get(0);
+
+        let total_count = stat_row
+            .map(|r| r.get::<_, i64>(0))
+            .and_then(|n| u64::try_from(n).ok())
+            .unwrap_or(0);
 
         // Probe LIMIT 0: get column metadata and detect id column
         let probe_sql = format!("SELECT * FROM \"{esc_schema}\".\"{esc_table}\" LIMIT 0");
@@ -673,10 +660,12 @@ mod test {
             )
             .await
             .unwrap();
+
         let SqlExecuteResult::RowsReturned(result) = result else {
             panic!("Expected RowsReturned");
         };
-        assert_eq!(result.total_count, 10);
+
         assert_eq!(result.rows.len(), 3);
+        assert_eq!(result.total_count, 3);
     }
 }
