@@ -25,11 +25,12 @@ pub struct AppState {
 
     pub mode: AppMode,
 
-    pub table_selected: usize,
+    // TODO(llm): refactor schema/table selection into its own state struct, with helper methods to get the
     pub schema_selected: usize,
+    pub table_selected: usize,
+    pub active_pane: ActivePane,
     pub schemas_raw: Vec<TableRef>,
     pub table_details: Option<TableDetails>,
-    pub active_pane: ActivePane,
     pub loaded_table: Option<Table>,
 
     /// States for various UI components. Kept here to persist across screen changes.
@@ -38,19 +39,17 @@ pub struct AppState {
     pub search: SearchState,
     pub sql_input: SqlInputState,
     pub records: RecordsState,
+    pub inspect: InspectState,
+    pub theme_picker: PickerState,
+
     /// Active runtime theme used for rendering.
     pub theme: Theme,
 
     /// Built-in themes available for runtime selection.
     pub available_themes: Vec<Theme>,
 
-    /// Keyboard picker state for selecting available themes.
-    pub theme_picker: PickerState,
-
     /// User-facing theme load error when startup falls back.
     pub theme_error: Option<String>,
-
-    pub inspect: InspectState,
 }
 
 impl AppState {
