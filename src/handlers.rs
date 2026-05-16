@@ -351,7 +351,7 @@ async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router
                 let _ = ConfigStorage::save(&state.connections_config);
             }
         }
-        KeyCode::Char('l') | KeyCode::Enter => {
+        KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => {
             if state.selected_filtered_connection_position().is_none() {
                 return;
             }
