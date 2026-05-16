@@ -88,7 +88,7 @@ pub fn filtered_drivers(query: &str) -> Vec<&'static DriverDefinition> {
 }
 /// Returns the selected driver from the filtered list.
 pub fn selected_driver(query: &str, selected: usize) -> Option<&'static DriverDefinition> {
-    filtered_drivers(&query).get(selected).copied()
+    filtered_drivers(query).get(selected).copied()
 }
 
 /// Display-only, database-agnostic view of a connection config.
