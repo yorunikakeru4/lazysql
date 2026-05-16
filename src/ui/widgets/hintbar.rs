@@ -12,11 +12,11 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, colors: &ThemeColors, hints:
     let mut spans: Vec<Span> = Vec::new();
     for (i, (key, action)) in hints.iter().enumerate() {
         if i > 0 {
-            spans.push(Span::styled("   ", Style::new().fg(colors.fg4)));
+            spans.push(Span::styled("   ", Style::new().fg(colors.fg2)));
         }
         spans.push(Span::styled(*key, Style::new().fg(colors.yellow)));
-        spans.push(Span::styled(":", Style::new().fg(colors.fg4)));
-        spans.push(Span::styled(*action, Style::new().fg(colors.fg3)));
+        spans.push(Span::styled(":", Style::new().fg(colors.fg2)));
+        spans.push(Span::styled(*action, Style::new().fg(colors.fg1)));
     }
     frame.render_widget(Paragraph::new(Line::from(spans)).style(Style::new()), area);
 }

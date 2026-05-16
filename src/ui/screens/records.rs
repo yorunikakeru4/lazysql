@@ -73,7 +73,7 @@ fn render_table(frame: &mut Frame, area: Rect, state: &AppState) {
                 let style = if i == records.selected_col {
                     Style::new().fg(colors.orange).bold()
                 } else {
-                    Style::new().fg(colors.fg4).bold()
+                    Style::new().fg(colors.fg2).bold()
                 };
                 Cell::from(c.name.as_str()).style(style)
             })
@@ -96,7 +96,7 @@ fn render_table(frame: &mut Frame, area: Rect, state: &AppState) {
                     } else if is_sel_row {
                         Style::new().bg(colors.bg_sel).fg(colors.fg0)
                     } else {
-                        Style::new().fg(colors.fg3)
+                        Style::new().fg(colors.fg1)
                     };
                     Cell::from(truncated).style(style)
                 })
@@ -124,7 +124,7 @@ fn render_table(frame: &mut Frame, area: Rect, state: &AppState) {
         .block(
             Block::bordered()
                 .title(title)
-                .border_style(Style::new().fg(colors.bg3)),
+                .border_style(Style::new().fg(colors.secondary)),
         )
         .row_highlight_style(Style::new().bg(colors.bg_sel));
 
@@ -137,14 +137,12 @@ fn render_expanded(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut rows = Vec::new();
     for (row_idx, row) in records.rows.iter().enumerate() {
         let record_num = records.offset + row_idx as u64 + 1;
-        let is_selected_record = row_idx == records.selected_row;
-        let title_style = Style::new().fg(colors.fg4).bold();
         rows.push(
             Row::new(vec![
                 Cell::from(format!("-[ RECORD {record_num} ]")),
                 Cell::from(""),
             ])
-            .style(title_style),
+            .style(Style::new().fg(colors.secondary).bold()),
         );
 
         for (col_idx, col) in records.columns.iter().enumerate() {
@@ -152,16 +150,17 @@ fn render_expanded(frame: &mut Frame, area: Rect, state: &AppState) {
                 .get(col_idx)
                 .and_then(|value| value.as_deref())
                 .unwrap_or("NULL");
-            let is_selected_field = is_selected_record && col_idx == records.selected_col;
+            let is_selected_field =
+                row_idx == records.selected_row && col_idx == records.selected_col;
             let name_style = if is_selected_field {
                 Style::new().fg(colors.orange).bold()
             } else {
-                Style::new().fg(colors.fg4)
+                Style::new().fg(colors.fg2)
             };
             let value_style = if is_selected_field {
                 Style::new().fg(colors.orange)
             } else {
-                Style::new().fg(colors.fg3)
+                Style::new().fg(colors.fg1)
             };
 
             rows.push(Row::new(vec![
@@ -199,8 +198,9 @@ fn render_expanded(frame: &mut Frame, area: Rect, state: &AppState) {
         .block(
             Block::bordered()
                 .title(title)
-                .border_style(Style::new().fg(colors.bg3)),
-        );
+                .border_style(Style::new().fg(colors.secondary)),
+        )
+        .style(Style::new().fg(colors.fg1));
 
     let mut table_state = TableState::default().with_selected(Some(flat_pos));
     frame.render_stateful_widget(table, area, &mut table_state);

@@ -42,7 +42,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         .map(|(line_idx, line_text)| {
             let line_num = Span::styled(
                 format!("{:>3}  ", line_idx + 1),
-                Style::new().fg(colors.fg4),
+                Style::new().fg(colors.fg2),
             );
 
             let mut spans = vec![line_num];

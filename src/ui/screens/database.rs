@@ -81,7 +81,7 @@ fn render_schemas_pane(frame: &mut Frame, area: Rect, state: &AppState) {
         .map(|(i, name)| {
             if is_active && i == state.schema_selected {
                 ListItem::new(Line::from(vec![
-                    Span::styled("▶ ", Style::new().fg(colors.orange)),
+                    Span::styled("▶ ", Style::new().fg(colors.primary)),
                     Span::styled(name.as_str(), Style::new().fg(colors.fg0).bold()),
                 ]))
             } else {
@@ -94,9 +94,9 @@ fn render_schemas_pane(frame: &mut Frame, area: Rect, state: &AppState) {
         .collect();
 
     let border_style = if is_active {
-        Style::new().fg(colors.orange)
+        Style::new().fg(colors.primary)
     } else {
-        Style::new().fg(colors.bg3)
+        Style::new().fg(colors.secondary)
     };
 
     let mut list_state = ListState::default().with_selected(if is_active {
@@ -128,7 +128,7 @@ fn render_tables_pane(frame: &mut Frame, area: Rect, state: &AppState) {
         .map(|(i, name)| {
             if is_active && i == state.table_selected {
                 ListItem::new(Line::from(vec![
-                    Span::styled("▶ ", Style::new().fg(colors.orange)),
+                    Span::styled("▶ ", Style::new().fg(colors.primary)),
                     Span::styled(name.as_str(), Style::new().fg(colors.fg0).bold()),
                 ]))
             } else {
@@ -141,9 +141,9 @@ fn render_tables_pane(frame: &mut Frame, area: Rect, state: &AppState) {
         .collect();
 
     let border_style = if is_active {
-        Style::new().fg(colors.orange)
+        Style::new().fg(colors.primary)
     } else {
-        Style::new().fg(colors.bg3)
+        Style::new().fg(colors.secondary)
     };
 
     let title = format!(
@@ -171,5 +171,5 @@ fn render_tables_pane(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 fn inactive_item_style(is_active: bool, colors: &ThemeColors) -> Style {
-    Style::new().fg(if is_active { colors.fg3 } else { colors.fg4 })
+    Style::new().fg(if is_active { colors.fg1 } else { colors.fg2 })
 }

@@ -22,5 +22,8 @@ down:
 build:
     cargo build --release
 
+check:
+    cargo check
+
 dev:
     cargo run --release

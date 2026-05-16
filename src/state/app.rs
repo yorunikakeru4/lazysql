@@ -7,11 +7,11 @@ use crate::db::repo::sql_repo::{
 use crate::state::connection::{ActivePane, ConnectState, ConnectionStatus, FormState};
 use crate::state::inspect::InspectState;
 use crate::state::mode::AppMode;
+use crate::state::picker::PickerState;
 use crate::state::records::{RecordsSource, RecordsState};
 use crate::state::search::SearchState;
 use crate::state::sql_input::{SqlInputState, SqlResult};
 use crate::themes::palette::Theme;
-use crate::themes::picker::ThemePickerState;
 use std::collections::BTreeSet;
 use std::time::Duration;
 
@@ -45,7 +45,7 @@ pub struct AppState {
     pub available_themes: Vec<Theme>,
 
     /// Keyboard picker state for selecting available themes.
-    pub theme_picker: ThemePickerState,
+    pub theme_picker: PickerState,
 
     /// User-facing theme load error when startup falls back.
     pub theme_error: Option<String>,
@@ -60,8 +60,6 @@ impl AppState {
         theme: Theme,
         available_themes: Vec<Theme>,
     ) -> Self {
-        let theme_names = available_themes.iter().map(|t| t.name.clone()).collect();
-
         AppState {
             connection_statuses: vec![ConnectionStatus::Unknown; connections.len()],
             connections_config: connections,
@@ -79,10 +77,10 @@ impl AppState {
             mode: AppMode::default(),
             active_pane: ActivePane::default(),
             table_details: None,
+            theme_picker: PickerState::default(),
+            theme_error: None,
             theme,
             available_themes,
-            theme_picker: ThemePickerState::new(theme_names),
-            theme_error: None,
         }
     }
 
@@ -658,7 +656,7 @@ async fn execute_sql_rows(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::config::PostgresConfig;
+    use crate::{config::PostgresConfig, ui::widgets::theme_picker::filtered_theme_names};
 
     fn pg_connect() -> ConnectConfig {
         ConnectConfig::Postgres(PostgresConfig {
@@ -692,7 +690,7 @@ mod test {
 
         assert_eq!(state.theme.name, "gruvbox");
         assert_eq!(
-            state.theme_picker.filtered_names(),
+            filtered_theme_names(&state.available_themes, &state.theme_picker.query),
             vec!["dracula", "gruvbox"]
         );
         assert_eq!(state.theme_error, None);

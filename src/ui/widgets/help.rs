@@ -94,7 +94,7 @@ pub(crate) fn render(frame: &mut Frame, screen: &Screen, colors: &ThemeColors) {
         for (key, action) in section.entries {
             lines.push(Line::from(vec![
                 Span::styled(format!("    {key:10}"), Style::new().fg(colors.yellow)),
-                Span::styled(*action, Style::new().fg(colors.fg3)),
+                Span::styled(*action, Style::new().fg(colors.fg1)),
             ]));
         }
         lines.push(Line::from(""));
@@ -102,7 +102,7 @@ pub(crate) fn render(frame: &mut Frame, screen: &Screen, colors: &ThemeColors) {
 
     lines.push(Line::from(vec![Span::styled(
         "  press ? or Esc to close",
-        Style::new().fg(colors.fg4),
+        Style::new().fg(colors.fg2),
     )]));
 
     frame.render_widget(

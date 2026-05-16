@@ -95,7 +95,7 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
         details.fields.len()
     );
     frame.render_widget(
-        Paragraph::new(header_text).style(Style::new().fg(colors.fg3).bg(colors.bg1)),
+        Paragraph::new(header_text).style(Style::new().fg(colors.fg1).bg(colors.bg1)),
         body_chunks[0],
     );
 
@@ -107,11 +107,11 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
         .collect();
 
     let col_header = Row::new(vec![
-        Cell::from("COLUMN").style(Style::new().fg(colors.fg4).bold()),
-        Cell::from("TYPE").style(Style::new().fg(colors.fg4).bold()),
-        Cell::from("NULL").style(Style::new().fg(colors.fg4).bold()),
-        Cell::from("CONSTRAINT").style(Style::new().fg(colors.fg4).bold()),
-        Cell::from("DEFAULT").style(Style::new().fg(colors.fg4).bold()),
+        Cell::from("COLUMN").style(Style::new().fg(colors.fg2).bold()),
+        Cell::from("TYPE").style(Style::new().fg(colors.fg2).bold()),
+        Cell::from("NULL").style(Style::new().fg(colors.fg2).bold()),
+        Cell::from("CONSTRAINT").style(Style::new().fg(colors.fg2).bold()),
+        Cell::from("DEFAULT").style(Style::new().fg(colors.fg2).bold()),
     ]);
 
     let rows: Vec<Row> = fields
@@ -133,7 +133,7 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
                 Some(ConstraintType::ForeignKey(t)) => {
                     Cell::from(format!("FK → {t}")).style(Style::new().fg(colors.blue))
                 }
-                None => Cell::from("—").style(Style::new().fg(colors.fg4)),
+                None => Cell::from("—").style(Style::new().fg(colors.fg2)),
             };
 
             let default_style = if f
@@ -164,7 +164,7 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
     let table = Table::new(rows, widths)
         .header(col_header)
         .row_highlight_style(Style::new().bg(colors.bg_sel))
-        .block(Block::bordered().border_style(Style::new().fg(colors.bg3)));
+        .block(Block::bordered().border_style(Style::new().fg(colors.bg2)));
     let clamped = state.inspect.selected.min(fields.len().saturating_sub(1));
     let mut table_state = TableState::default().with_selected(Some(clamped));
     frame.render_stateful_widget(table, body_chunks[1], &mut table_state);
@@ -197,17 +197,17 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let footer_lines = vec![
         Line::from(vec![
-            Span::styled("  indexes  ", Style::new().fg(colors.orange)),
-            Span::styled(idx_str, Style::new().fg(colors.fg3)),
+            Span::styled("  indexes  ", Style::new().fg(colors.primary)),
+            Span::styled(idx_str, Style::new().fg(colors.fg1)),
         ]),
         Line::from(vec![
-            Span::styled("  fk-refs  ", Style::new().fg(colors.orange)),
-            Span::styled(fk_str, Style::new().fg(colors.fg3)),
+            Span::styled("  fk-refs  ", Style::new().fg(colors.primary)),
+            Span::styled(fk_str, Style::new().fg(colors.fg1)),
         ]),
     ];
     frame.render_widget(
         Paragraph::new(footer_lines)
-            .block(Block::bordered().border_style(Style::new().fg(colors.bg3))),
+            .block(Block::bordered().border_style(Style::new().fg(colors.bg2))),
         body_chunks[2],
     );
 }

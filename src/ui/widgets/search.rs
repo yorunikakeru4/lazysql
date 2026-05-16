@@ -21,7 +21,7 @@ pub(crate) fn render_search_bar(frame: &mut Frame, area: Rect, state: &AppState)
             Block::bordered()
                 .title(title)
                 .title_style(Style::new().fg(colors.blue).bold())
-                .border_style(Style::new().fg(colors.bg3)),
+                .border_style(Style::new().fg(colors.bg2)),
         ),
         area,
     );

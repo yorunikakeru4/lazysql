@@ -10,6 +10,7 @@ use crate::state::mode::AppMode;
 use crate::state::navigation::{Router, Screen};
 use crate::state::sql_input::SqlResult;
 use crate::themes;
+use crate::ui::widgets::theme_picker::filtered_theme_names;
 
 /// Dispatches a key event to the appropriate screen handler.
 /// Returns `false` when the application should quit.
@@ -87,21 +88,39 @@ fn handle_theme_picker(
         return false;
     }
 
+    let filtered = filtered_theme_names(&state.available_themes, &state.theme_picker.query);
+
     match key.code {
         KeyCode::Esc => state.theme_picker.cancel(),
-        KeyCode::Backspace => state.theme_picker.pop_query(),
-        KeyCode::Down => state.theme_picker.move_next(),
-        KeyCode::Up => state.theme_picker.move_prev(),
+
+        KeyCode::Backspace => {
+            state.theme_picker.pop_query();
+        }
+
+        KeyCode::Down => {
+            state.theme_picker.move_next(filtered.len());
+        }
+
+        KeyCode::Up => {
+            state.theme_picker.move_prev();
+        }
+
         KeyCode::Enter => {
-            if let Some(name) = state.theme_picker.selected_name().map(str::to_string)
+            let selected = state.theme_picker.selected;
+
+            if let Some(name) = filtered.get(selected).copied().map(str::to_string)
                 && state.apply_theme_by_name(&name)
             {
                 state.theme_error = save_selected(&name).err().map(|error| error.to_string());
+
+                state.theme_picker.cancel();
             }
         }
+
         KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-            state.theme_picker.push_query(c);
+            state.theme_picker.push_query_char(c);
         }
+
         _ => {}
     }
 
@@ -464,7 +483,7 @@ async fn handle_database(
                 ActivePane::Schemas
             };
         }
-        KeyCode::Char('h') => {
+        KeyCode::Left | KeyCode::Char('h') => {
             if state.active_pane == ActivePane::Tables {
                 state.active_pane = ActivePane::Schemas;
             } else {
