@@ -691,7 +691,7 @@ mod test {
         assert_eq!(state.theme.name, "gruvbox");
         assert_eq!(
             filtered_theme_names(&state.available_themes, &state.theme_picker.query),
-            vec!["dracula", "gruvbox"]
+            vec!["gruvbox", "dracula"]
         );
         assert_eq!(state.theme_error, None);
     }
