@@ -1,7 +1,7 @@
 pub mod form;
 pub use form::{FIELD_LABELS, FormState};
 
-use crate::config::ConnectConfig;
+use crate::{config::ConnectConfig, state::picker::PickerState};
 
 /// Stable identifier for supported database drivers.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -68,79 +68,27 @@ pub const DRIVER_REGISTRY: &[DriverDefinition] = &[
         default_port: 3306,
     },
 ];
-
-/// State for the fuzzy driver picker.
-#[derive(Debug, Default, Clone)]
-pub struct DriverPickerState {
-    /// Filter query typed by the user.
-    pub query: String,
-    /// Selected row within the filtered driver list.
-    pub selected: usize,
+/// Returns drivers matching the current query.
+pub fn filtered_drivers(query: &str) -> Vec<&'static DriverDefinition> {
+    let query = query.trim().to_ascii_lowercase();
+    DRIVER_REGISTRY
+        .iter()
+        .filter(|driver| {
+            if query.is_empty() {
+                return true;
+            }
+            driver.id.contains(&query)
+                || driver.label.contains(&query)
+                || driver
+                    .aliases
+                    .iter()
+                    .any(|alias| alias.to_ascii_lowercase().contains(&query))
+        })
+        .collect()
 }
-
-impl DriverPickerState {
-    /// Returns drivers matching the current query.
-    pub fn filtered_drivers(&self) -> Vec<&'static DriverDefinition> {
-        let query = self.query.trim().to_ascii_lowercase();
-        DRIVER_REGISTRY
-            .iter()
-            .filter(|driver| {
-                if query.is_empty() {
-                    return true;
-                }
-                driver.id.contains(&query)
-                    || driver.label.contains(&query)
-                    || driver
-                        .aliases
-                        .iter()
-                        .any(|alias| alias.to_ascii_lowercase().contains(&query))
-            })
-            .collect()
-    }
-
-    /// Returns the selected driver from the filtered list.
-    pub fn selected_driver(&self) -> Option<&'static DriverDefinition> {
-        self.filtered_drivers().get(self.selected).copied()
-    }
-
-    /// Moves selection down within filtered drivers.
-    pub fn select_next(&mut self) {
-        let len = self.filtered_drivers().len();
-        if len == 0 {
-            self.selected = 0;
-            return;
-        }
-        self.selected = (self.selected + 1) % len;
-    }
-
-    /// Moves selection up within filtered drivers.
-    pub fn select_prev(&mut self) {
-        let len = self.filtered_drivers().len();
-        if len == 0 {
-            self.selected = 0;
-            return;
-        }
-        self.selected = if self.selected == 0 {
-            len - 1
-        } else {
-            self.selected - 1
-        };
-    }
-
-    /// Keeps selected index inside the filtered result length.
-    pub fn clamp_selection(&mut self) {
-        let len = self.filtered_drivers().len();
-        if len == 0 {
-            self.selected = 0;
-            return;
-        }
-        self.selected = self.selected.min(len - 1);
-    }
-
-    /// Clears query and selection.
-    pub fn reset(&mut self) {
-        *self = Self::default();
-    }
+/// Returns the selected driver from the filtered list.
+pub fn selected_driver(query: &str, selected: usize) -> Option<&'static DriverDefinition> {
+    filtered_drivers(query).get(selected).copied()
 }
 
 /// Display-only, database-agnostic view of a connection config.
@@ -216,7 +164,7 @@ pub struct ConnectState {
     /// Whether the driver picker is open on the Connections screen.
     pub driver_picker_open: bool,
     /// State for the add-connection driver picker.
-    pub driver_picker: DriverPickerState,
+    pub driver_picker: PickerState,
     /// Last reachability result for the unsaved connection form draft.
     pub draft_status: Option<ConnectionStatus>,
 }
@@ -366,12 +314,12 @@ mod test {
 
     #[test]
     fn driver_picker_filters_by_label_and_aliases() {
-        let picker = DriverPickerState {
+        let picker = PickerState {
             query: "pg".to_string(),
             ..Default::default()
         };
 
-        let filtered = picker.filtered_drivers();
+        let filtered = filtered_drivers(picker.query.as_str());
 
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].kind, DriverKind::Postgres);
@@ -379,13 +327,24 @@ mod test {
 
     #[test]
     fn driver_picker_selection_wraps_filtered_results() {
-        let mut picker = DriverPickerState::default();
+        let mut picker = PickerState::default();
 
-        picker.select_prev();
-        assert_eq!(picker.selected_driver().unwrap().kind, DriverKind::MySql);
+        let filtered = filtered_drivers(picker.query.as_str());
+        picker.move_prev();
+        assert_eq!(
+            selected_driver(&picker.query, picker.selected)
+                .unwrap()
+                .kind,
+            DriverKind::Postgres
+        );
 
-        picker.select_next();
-        assert_eq!(picker.selected_driver().unwrap().kind, DriverKind::Postgres);
+        picker.move_next(filtered.len());
+        assert_eq!(
+            selected_driver(&picker.query, picker.selected)
+                .unwrap()
+                .kind,
+            DriverKind::MySql
+        );
     }
 
     #[test]
@@ -397,7 +356,9 @@ mod test {
         assert!(state.driver_picker_open);
         assert!(!state.form_open);
         assert_eq!(
-            state.driver_picker.selected_driver().unwrap().kind,
+            selected_driver(&state.driver_picker.query, state.driver_picker.selected)
+                .unwrap()
+                .kind,
             DriverKind::Postgres
         );
     }

@@ -5,11 +5,12 @@ use std::io::Stdout;
 use crate::config::storage::ConfigStorage;
 use crate::db;
 use crate::state::app::{AppState, format_sql_error};
-use crate::state::connection::{ActivePane, FormState};
+use crate::state::connection::{ActivePane, FormState, filtered_drivers, selected_driver};
 use crate::state::mode::AppMode;
 use crate::state::navigation::{Router, Screen};
 use crate::state::sql_input::SqlResult;
 use crate::themes;
+use crate::ui::widgets::theme_picker::filtered_theme_names;
 
 /// Dispatches a key event to the appropriate screen handler.
 /// Returns `false` when the application should quit.
@@ -87,21 +88,37 @@ fn handle_theme_picker(
         return false;
     }
 
+    let filtered = filtered_theme_names(&state.available_themes, &state.theme_picker.query);
+
     match key.code {
         KeyCode::Esc => state.theme_picker.cancel(),
-        KeyCode::Backspace => state.theme_picker.pop_query(),
-        KeyCode::Down => state.theme_picker.move_next(),
-        KeyCode::Up => state.theme_picker.move_prev(),
+
+        KeyCode::Backspace => {
+            state.theme_picker.pop_query();
+        }
+
+        KeyCode::Down => {
+            state.theme_picker.move_next(filtered.len());
+        }
+
+        KeyCode::Up => {
+            state.theme_picker.move_prev();
+        }
+
         KeyCode::Enter => {
-            if let Some(name) = state.theme_picker.selected_name().map(str::to_string)
+            let selected = state.theme_picker.selected;
+
+            if let Some(name) = filtered.get(selected).copied().map(str::to_string)
                 && state.apply_theme_by_name(&name)
             {
                 state.theme_error = save_selected(&name).err().map(|error| error.to_string());
             }
         }
+
         KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-            state.theme_picker.push_query(c);
+            state.theme_picker.push_query_char(c);
         }
+
         _ => {}
     }
 
@@ -352,13 +369,17 @@ async fn handle_connect(key: KeyEvent, state: &mut AppState, router: &mut Router
 }
 
 fn handle_driver_picker(key: KeyEvent, state: &mut AppState) {
+    let filtered = filtered_drivers(&state.connect.driver_picker.query);
     match key.code {
         KeyCode::Esc => {
             state.connect.close_driver_picker();
             state.mode = AppMode::Normal;
         }
         KeyCode::Enter => {
-            let Some(driver) = state.connect.driver_picker.selected_driver() else {
+            let Some(driver) = selected_driver(
+                &state.connect.driver_picker.query,
+                state.connect.driver_picker.selected,
+            ) else {
                 return;
             };
             state.form = FormState::new_for_driver(driver.kind);
@@ -366,15 +387,15 @@ fn handle_driver_picker(key: KeyEvent, state: &mut AppState) {
             state.connect.open_form();
             state.mode = AppMode::Insert;
         }
-        KeyCode::Down | KeyCode::Char('j') => state.connect.driver_picker.select_next(),
-        KeyCode::Up | KeyCode::Char('k') => state.connect.driver_picker.select_prev(),
+        KeyCode::Down | KeyCode::Char('j') => state.connect.driver_picker.move_next(filtered.len()),
+        KeyCode::Up | KeyCode::Char('k') => state.connect.driver_picker.move_prev(),
         KeyCode::Backspace => {
             state.connect.driver_picker.query.pop();
-            state.connect.driver_picker.clamp_selection();
+            state.connect.driver_picker.clamp_selection(filtered.len());
         }
         KeyCode::Char(c) => {
             state.connect.driver_picker.query.push(c);
-            state.connect.driver_picker.clamp_selection();
+            state.connect.driver_picker.clamp_selection(filtered.len());
         }
         _ => {}
     }
@@ -464,7 +485,7 @@ async fn handle_database(
                 ActivePane::Schemas
             };
         }
-        KeyCode::Char('h') => {
+        KeyCode::Left | KeyCode::Char('h') => {
             if state.active_pane == ActivePane::Tables {
                 state.active_pane = ActivePane::Schemas;
             } else {
@@ -632,9 +653,35 @@ async fn handle_records(
             router.pop();
         }
 
-        KeyCode::Down | KeyCode::Char('j') if is_vertical => state.records.move_col_right(),
-        KeyCode::Down | KeyCode::Char('j') => state.move_record_down(false).await,
-        KeyCode::Up | KeyCode::Char('k') if is_vertical => state.records.move_col_left(),
+        KeyCode::Down | KeyCode::Char('j') if is_vertical => {
+            let last_col = state.records.columns.len().saturating_sub(1);
+
+            if state.records.selected_col >= last_col {
+                state.move_record_down(true).await;
+                state.records.selected_col = 0;
+            } else {
+                state.records.move_col_right();
+            }
+        }
+
+        KeyCode::Down | KeyCode::Char('j') => {
+            state.move_record_down(false).await;
+        }
+
+        KeyCode::Up | KeyCode::Char('k') if is_vertical => {
+            if state.records.selected_col == 0 {
+                let old_row = state.records.selected_row;
+
+                state.move_record_up(true).await;
+
+                if state.records.selected_row != old_row {
+                    state.records.selected_col = state.records.columns.len().saturating_sub(1);
+                }
+            } else {
+                state.records.move_col_left();
+            }
+        }
+
         KeyCode::Up | KeyCode::Char('k') => state.move_record_up(false).await,
         KeyCode::Char('l') | KeyCode::Right if is_vertical => state.move_record_down(true).await,
         KeyCode::Char('l') | KeyCode::Right => state.records.move_col_right(),
@@ -856,7 +903,9 @@ mod test {
         let mut router = Router::new();
         state.connect.open_driver_picker();
         state.connect.driver_picker.query = "my".to_string();
-        state.connect.driver_picker.clamp_selection();
+
+        let filtered = filtered_drivers(&state.connect.driver_picker.query);
+        state.connect.driver_picker.clamp_selection(filtered.len());
         state.mode = AppMode::Insert;
 
         handle_connect(
@@ -972,6 +1021,7 @@ mod test {
         let gruvbox = crate::themes::builtin::fallback_theme();
         let mut dracula = gruvbox.clone();
         dracula.name = "dracula".to_string();
+
         let mut state = AppState::new(vec![], gruvbox.clone(), vec![gruvbox, dracula]);
         state.theme_picker.open();
 
@@ -982,7 +1032,7 @@ mod test {
         );
 
         assert!(consumed);
-        assert_eq!(state.theme.name, "dracula");
+        assert_eq!(state.theme.name, "gruvbox");
         assert!(state.theme_picker.open);
     }
 

@@ -191,13 +191,15 @@ mod test {
             name = "{name}"
 
             [colors]
+            primary = "#282828"
+            secondary = "#ebdbb2"
             bg0 = "#000000"
             bg1 = "#111111"
-            bg3 = "#333333"
+            bg2 = "#333333"
             bg_sel = "#444444"
             fg0 = "#ffffff"
-            fg3 = "#c0c0c0"
-            fg4 = "#808080"
+            fg1 = "#c0c0c0"
+            fg2 = "#808080"
             red = "#ff5555"
             green = "#50fa7b"
             yellow = "#f1fa8c"

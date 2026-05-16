@@ -1,6 +1,7 @@
 use crate::state::app::AppState;
-use crate::state::connection::{ConnectionMeta, ConnectionStatus, DriverDefinition};
+use crate::state::connection::{ConnectionMeta, ConnectionStatus, filtered_drivers};
 use crate::themes::palette::ThemeColors;
+use crate::ui::widgets::components::picker::{PickerItem, PickerView};
 use crate::ui::{layout, widgets};
 use ratatui::{
     Frame,
@@ -28,6 +29,8 @@ const FORM_HINTS: &[(&str, &str)] = &[
     ("^t", "test"),
     ("esc", "cancel"),
 ];
+
+const DOT_SYMBOL: &str = "●";
 
 /// Renders the connection list screen.
 pub(crate) fn render(frame: &mut Frame, state: &AppState) {
@@ -130,17 +133,17 @@ fn render_connections_header(
     hints: &[(&str, &str)],
 ) {
     let title = Line::from(vec![
-        Span::styled(" lazysql ", Style::new().fg(colors.blue).bold()),
-        Span::styled(env!("CARGO_PKG_VERSION"), Style::new().fg(colors.fg3)),
+        Span::styled(" lazysql ", Style::new().fg(colors.secondary).bold()),
+        Span::styled(env!("CARGO_PKG_VERSION"), Style::new().fg(colors.fg1)),
         Span::raw(" "),
     ]);
     let block = Block::bordered()
         .title(title)
         .title(
-            Line::styled(" Connections ", Style::new().fg(colors.blue).bold())
+            Line::styled(" Connections ", Style::new().fg(colors.secondary).bold())
                 .alignment(Alignment::Right),
         )
-        .border_style(Style::new().fg(colors.blue));
+        .border_style(Style::new().fg(colors.primary));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     widgets::hintbar::render(frame, inner, colors, hints);
@@ -155,12 +158,12 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
         .collect();
 
     let header = Row::new(vec![
-        Cell::from(" #").style(Style::new().fg(colors.fg4)),
-        Cell::from("NAME").style(Style::new().fg(colors.fg4).bold()),
-        Cell::from("HOST").style(Style::new().fg(colors.fg4).bold()),
-        Cell::from("DRIVER").style(Style::new().fg(colors.fg4).bold()),
-        Cell::from("DATABASE").style(Style::new().fg(colors.fg4).bold()),
-        Cell::from("STATUS").style(Style::new().fg(colors.fg4).bold()),
+        Cell::from(" #").style(Style::new().fg(colors.fg0)),
+        Cell::from("NAME").style(Style::new().fg(colors.fg0).bold()),
+        Cell::from("HOST").style(Style::new().fg(colors.fg0).bold()),
+        Cell::from("DRIVER").style(Style::new().fg(colors.fg0).bold()),
+        Cell::from("DATABASE").style(Style::new().fg(colors.fg0).bold()),
+        Cell::from("STATUS").style(Style::new().fg(colors.fg0).bold()),
     ]);
 
     let rows: Vec<Row> = metas
@@ -172,11 +175,11 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
             let host = &m.host;
             let port = m.port;
             Row::new(vec![
-                Cell::from(format!(" {row_number}")).style(Style::new().fg(colors.fg4)),
-                Cell::from(m.name.clone()).style(Style::new().fg(colors.fg0)),
-                Cell::from(format!("{host}:{port}")).style(Style::new().fg(colors.fg3)),
+                Cell::from(format!(" {row_number}")).style(Style::new().fg(colors.fg0)),
+                Cell::from(m.name.clone()).style(Style::new().fg(colors.aqua)),
+                Cell::from(format!("{host}:{port}")).style(Style::new().fg(colors.fg0)),
                 Cell::from(m.driver.clone()).style(Style::new().fg(colors.blue)),
-                Cell::from(m.db_name.clone()).style(Style::new().fg(colors.fg3)),
+                Cell::from(m.db_name.clone()).style(Style::new().fg(colors.fg0)),
                 status_cell,
             ])
         })
@@ -211,9 +214,9 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
         .header(header)
         .block(
             Block::bordered()
-                .title(format!(" Saved Connections ─── {count_str} "))
-                .title_style(Style::new().fg(colors.blue).bold())
-                .border_style(Style::new().fg(colors.blue)),
+                .title(format!(" Saved Connections {count_str} "))
+                .title_style(Style::new().fg(colors.secondary).bold())
+                .border_style(Style::new().fg(colors.primary)),
         )
         .row_highlight_style(selected_row_highlight_style(colors))
         .highlight_symbol("▶ ");
@@ -224,27 +227,25 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
 fn render_status_cell(status: ConnectionStatus, colors: &ThemeColors) -> Cell<'static> {
     let (color, label) = status_indicator(status, colors);
     Cell::from(Line::from(vec![
-        Span::styled(status_dot_symbol(), Style::new().fg(color)),
+        Span::styled(DOT_SYMBOL, Style::new().fg(color)),
         Span::styled(label, Style::new().fg(color)),
     ]))
 }
 
 fn status_indicator(status: ConnectionStatus, colors: &ThemeColors) -> (Color, &'static str) {
     match status {
-        ConnectionStatus::Unknown => (colors.fg4, " unknown"),
+        ConnectionStatus::Unknown => (colors.fg2, " unknown"),
         ConnectionStatus::Online => (colors.green, " online"),
         ConnectionStatus::Offline => (colors.red, " offline"),
     }
 }
 
-fn status_dot_symbol() -> &'static str {
-    "●"
-}
-
+/// Returns a style for highlighting the selected row in the connection list, using the theme's selection background color without overriding the foreground color.
 fn selected_row_highlight_style(colors: &ThemeColors) -> Style {
     Style::new().bg(colors.bg_sel)
 }
 
+/// Renders the connection form panel on the right side when the form is open.
 fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState) {
     let colors = &state.theme.colors;
     let title = if state.form.is_editing() {
@@ -254,8 +255,8 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
     };
     let block = Block::bordered()
         .title(title)
-        .title_style(Style::new().fg(colors.orange).bold())
-        .border_style(Style::new().fg(colors.orange));
+        .title_style(Style::new().fg(colors.secondary).bold())
+        .border_style(Style::new().fg(colors.primary));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -275,9 +276,9 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
 
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("  driver             ", Style::new().fg(colors.fg4)),
+            Span::styled("  driver             ", Style::new().fg(colors.fg1)),
             Span::styled(state.form.driver.label(), Style::new().fg(colors.blue)),
-            Span::styled("  (^d to change)", Style::new().fg(colors.fg4)),
+            Span::styled("  (^d to change)", Style::new().fg(colors.fg1)),
         ])),
         field_rows[0],
     );
@@ -291,7 +292,7 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
         let color = if i == state.form.focused {
             colors.orange
         } else {
-            colors.fg4
+            colors.fg1
         };
         frame.render_widget(
             Paragraph::new(Line::from(vec![
@@ -309,8 +310,8 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
     let (color, label) = status_indicator(status, colors);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("  status             ", Style::new().fg(colors.fg4)),
-            Span::styled(status_dot_symbol(), Style::new().fg(color)),
+            Span::styled("  status             ", Style::new().fg(colors.fg1)),
+            Span::styled(DOT_SYMBOL, Style::new().fg(color)),
             Span::styled(label, Style::new().fg(color)),
         ])),
         field_rows[7],
@@ -338,96 +339,59 @@ fn render_connection_form_panel(frame: &mut Frame, area: Rect, state: &AppState)
         field_rows[9],
     );
 
-    if state.form.focused != 5 {
-        let focused_row = state.form.focused + 1;
-        let cursor_x =
-            field_rows[focused_row].x + 21 + state.form.values[state.form.focused].len() as u16;
-        let max_x = field_rows[focused_row]
-            .x
-            .saturating_add(field_rows[focused_row].width.saturating_sub(1));
-        frame.set_cursor_position(Position::new(
-            cursor_x.min(max_x),
-            field_rows[focused_row].y,
-        ));
+    if state.form.focused == 5 {
+        return;
     }
-}
-
-fn render_driver_picker(frame: &mut Frame, state: &AppState) {
-    let colors = &state.theme.colors;
-    let area = layout::centered_rect(48, 12, frame.area());
-    frame.render_widget(Clear, area);
-
-    let block = Block::bordered()
-        .title(" Select driver ")
-        .title_style(Style::new().fg(colors.orange).bold())
-        .border_style(Style::new().fg(colors.orange));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Min(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ])
-    .split(inner);
-
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::raw("  › "),
-            Span::styled(
-                state.connect.driver_picker.query.as_str(),
-                Style::new().fg(colors.fg0),
-            ),
-        ])),
-        rows[0],
-    );
-
-    let filtered = state.connect.driver_picker.filtered_drivers();
-    let driver_lines: Vec<Line> = filtered
-        .iter()
-        .enumerate()
-        .map(|(index, driver)| render_driver_picker_row(index, driver, state))
-        .collect();
-    frame.render_widget(Paragraph::new(driver_lines), rows[2]);
-
-    let total = crate::state::connection::DRIVER_REGISTRY.len();
-    let visible = filtered.len();
-    frame.render_widget(
-        Paragraph::new(format!("  {visible} of {total} drivers · type to filter")),
-        rows[3],
-    );
-    frame.render_widget(Paragraph::new("  ↵:select  esc:cancel"), rows[4]);
-
-    let cursor_x = rows[0]
+    let focused_row = state.form.focused + 1;
+    let cursor_x =
+        field_rows[focused_row].x + 21 + state.form.values[state.form.focused].len() as u16;
+    let max_x = field_rows[focused_row]
         .x
-        .saturating_add(4 + state.connect.driver_picker.query.len() as u16);
+        .saturating_add(field_rows[focused_row].width.saturating_sub(1));
     frame.set_cursor_position(Position::new(
-        cursor_x.min(rows[0].x.saturating_add(rows[0].width.saturating_sub(1))),
-        rows[0].y,
+        cursor_x.min(max_x),
+        field_rows[focused_row].y,
     ));
 }
 
-fn render_driver_picker_row(
-    index: usize,
-    driver: &DriverDefinition,
-    state: &AppState,
-) -> Line<'static> {
-    let colors = &state.theme.colors;
-    let selected = index == state.connect.driver_picker.selected;
-    let prefix = if selected { " ▶ " } else { "   " };
-    let style = if selected {
-        Style::new().fg(colors.orange).bold()
-    } else {
-        Style::new().fg(colors.fg0)
-    };
+/// Renders the driver picker as a centered popup when it's open.
+fn render_driver_picker(frame: &mut Frame, state: &AppState) {
+    let colors = state.theme.colors;
+    let area = layout::centered_rect(48, 12, frame.area());
 
-    Line::from(vec![
-        Span::styled(prefix, style),
-        Span::styled(format!("{:<12}", driver.label), style),
-        Span::styled(driver.summary, Style::new().fg(colors.fg4)),
-    ])
+    let filtered = filtered_drivers(&state.connect.driver_picker.query);
+
+    let items: Vec<PickerItem<'_>> = filtered
+        .iter()
+        .map(|driver| PickerItem {
+            label: driver.label,
+            meta: Some(driver.summary),
+        })
+        .collect();
+
+    let total = crate::state::connection::DRIVER_REGISTRY.len();
+    let visible = filtered.len();
+
+    PickerView {
+        title: "Select driver",
+        query: &state.connect.driver_picker.query,
+        selected: state.connect.driver_picker.selected,
+        items: &items,
+        colors,
+        empty_message: "No drivers found",
+        footer: Line::from(vec![
+            Span::styled(
+                format!(" {visible} of {total} drivers  "),
+                Style::new().fg(colors.fg1),
+            ),
+            Span::styled("enter:select", Style::new().fg(colors.yellow)),
+            Span::raw("  "),
+            Span::styled("esc:cancel", Style::new().fg(colors.fg1)),
+            Span::raw("  "),
+            Span::styled("type to filter", Style::new().fg(colors.fg1)),
+        ]),
+    }
+    .render(frame, area);
 }
 
 /// Renders a centered error popup when a connection attempt failed.
@@ -465,24 +429,24 @@ fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
         let host = &m.host;
         vec![
             Line::from(vec![
-                Span::styled("  driver  ", Style::new().fg(colors.fg4)),
+                Span::styled("  driver  ", Style::new().fg(colors.fg0)),
                 Span::styled(&m.driver, Style::new().fg(colors.blue)),
             ]),
             Line::from(vec![
-                Span::styled("  user    ", Style::new().fg(colors.fg4)),
+                Span::styled("  user    ", Style::new().fg(colors.fg0)),
                 Span::styled(format!("{user}@{host}"), Style::new().fg(colors.purple)),
-                Span::styled("   ·   port  ", Style::new().fg(colors.fg4)),
+                Span::styled("   ·   port  ", Style::new().fg(colors.fg0)),
                 Span::styled(m.port.to_string(), Style::new().fg(colors.fg0)),
             ]),
             Line::from(vec![
-                Span::styled("  db      ", Style::new().fg(colors.fg4)),
+                Span::styled("  db      ", Style::new().fg(colors.fg0)),
                 Span::styled(&m.db_name, Style::new().fg(colors.fg0)),
             ]),
         ]
     } else {
         vec![Line::from(Span::styled(
             "  No connection selected",
-            Style::new().fg(colors.fg4),
+            Style::new().fg(colors.fg2),
         ))]
     };
 
@@ -498,7 +462,7 @@ fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
             Block::bordered()
                 .title(title)
                 .title_style(Style::new().fg(colors.blue).bold())
-                .border_style(Style::new().fg(colors.blue)),
+                .border_style(Style::new().fg(colors.primary)),
         ),
         area,
     );
@@ -764,7 +728,7 @@ mod test {
         let colors = crate::themes::builtin::fallback_theme().colors;
         assert_eq!(
             status_indicator(ConnectionStatus::Unknown, &colors),
-            (colors.fg4, " unknown")
+            (colors.fg2, " unknown")
         );
         assert_eq!(
             status_indicator(ConnectionStatus::Online, &colors),
@@ -774,11 +738,6 @@ mod test {
             status_indicator(ConnectionStatus::Offline, &colors),
             (colors.red, " offline")
         );
-    }
-
-    #[test]
-    fn status_dot_uses_filled_circle_symbol() {
-        assert_eq!(status_dot_symbol(), "●");
     }
 
     #[test]

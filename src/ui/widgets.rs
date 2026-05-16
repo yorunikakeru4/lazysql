@@ -1,3 +1,4 @@
+pub(crate) mod components;
 pub(crate) mod help;
 pub(crate) mod hintbar;
 pub(crate) mod search;

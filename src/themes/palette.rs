@@ -11,13 +11,22 @@ pub struct Theme {
 /// Runtime color palette used by screens and widgets.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ThemeColors {
+    // primary colors
+    pub primary: Color,
+    pub secondary: Color,
+
+    // background colors
     pub bg0: Color,
     pub bg1: Color,
-    pub bg3: Color,
+    pub bg2: Color,
     pub bg_sel: Color,
+
+    // foreground colors
     pub fg0: Color,
-    pub fg3: Color,
-    pub fg4: Color,
+    pub fg1: Color,
+    pub fg2: Color,
+
+    // accent colors
     pub red: Color,
     pub green: Color,
     pub yellow: Color,
@@ -37,13 +46,18 @@ pub struct RawTheme {
 /// TOML representation of theme colors.
 #[derive(Debug, Clone, Deserialize)]
 pub struct RawThemeColors {
+    pub primary: String,
+    pub secondary: String,
+
     pub bg0: String,
     pub bg1: String,
-    pub bg3: String,
+    pub bg2: String,
     pub bg_sel: String,
+
     pub fg0: String,
-    pub fg3: String,
-    pub fg4: String,
+    pub fg1: String,
+    pub fg2: String,
+
     pub red: String,
     pub green: String,
     pub yellow: String,
@@ -89,13 +103,17 @@ impl TryFrom<RawTheme> for Theme {
         Ok(Self {
             name: raw.name,
             colors: ThemeColors {
+                primary: parse_theme_color("primary", &raw.colors.primary)?,
+                secondary: parse_theme_color("secondary", &raw.colors.secondary)?,
                 bg0: parse_theme_color("bg0", &raw.colors.bg0)?,
                 bg1: parse_theme_color("bg1", &raw.colors.bg1)?,
-                bg3: parse_theme_color("bg3", &raw.colors.bg3)?,
+                bg2: parse_theme_color("bg3", &raw.colors.bg2)?,
                 bg_sel: parse_theme_color("bg_sel", &raw.colors.bg_sel)?,
+
                 fg0: parse_theme_color("fg0", &raw.colors.fg0)?,
-                fg3: parse_theme_color("fg3", &raw.colors.fg3)?,
-                fg4: parse_theme_color("fg4", &raw.colors.fg4)?,
+                fg1: parse_theme_color("fg3", &raw.colors.fg1)?,
+                fg2: parse_theme_color("fg4", &raw.colors.fg2)?,
+
                 red: parse_theme_color("red", &raw.colors.red)?,
                 green: parse_theme_color("green", &raw.colors.green)?,
                 yellow: parse_theme_color("yellow", &raw.colors.yellow)?,
@@ -146,13 +164,15 @@ mod test {
             name = "test"
 
             [colors]
+            primary = "#282828"
+            secondary = "#ebdbb2"
             bg0 = "#000000"
             bg1 = "#111111"
-            bg3 = "#333333"
+            bg2 = "#333333"
             bg_sel = "#444444"
             fg0 = "#ffffff"
-            fg3 = "#c0c0c0"
-            fg4 = "#808080"
+            fg1 = "#c0c0c0"
+            fg2 = "#808080"
             red = "#ff5555"
             green = "#50fa7b"
             yellow = "#f1fa8c"
