@@ -210,8 +210,8 @@ impl Database for PostgresRepo {
 
         Ok(FetchRowsResult {
             columns,
+            total_count,
             rows: data,
-            total_count: u64::try_from(total_count).unwrap_or(0),
         })
     }
 
