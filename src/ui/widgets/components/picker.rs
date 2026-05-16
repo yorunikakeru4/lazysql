@@ -34,8 +34,8 @@ impl<'a> PickerView<'a> {
     pub fn render(self, frame: &mut Frame, area: Rect) {
         let block = Block::bordered()
             .title(format!(" {} ", self.title))
-            .title_style(Style::new().fg(self.colors.blue).bold())
-            .border_style(Style::new().fg(self.colors.blue))
+            .title_style(Style::new().fg(self.colors.secondary).bold())
+            .border_style(Style::new().fg(self.colors.primary))
             .style(Style::new().fg(self.colors.fg0));
 
         let inner = block.inner(area);

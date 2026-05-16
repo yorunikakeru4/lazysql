@@ -107,11 +107,11 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
         .collect();
 
     let col_header = Row::new(vec![
-        Cell::from("COLUMN").style(Style::new().fg(colors.fg2).bold()),
-        Cell::from("TYPE").style(Style::new().fg(colors.fg2).bold()),
-        Cell::from("NULL").style(Style::new().fg(colors.fg2).bold()),
-        Cell::from("CONSTRAINT").style(Style::new().fg(colors.fg2).bold()),
-        Cell::from("DEFAULT").style(Style::new().fg(colors.fg2).bold()),
+        Cell::from("COLUMN").style(Style::new().fg(colors.fg1).bold()),
+        Cell::from("TYPE").style(Style::new().fg(colors.fg1).bold()),
+        Cell::from("NULL").style(Style::new().fg(colors.fg1).bold()),
+        Cell::from("CONSTRAINT").style(Style::new().fg(colors.fg1).bold()),
+        Cell::from("DEFAULT").style(Style::new().fg(colors.fg1).bold()),
     ]);
 
     let rows: Vec<Row> = fields

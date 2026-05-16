@@ -52,17 +52,17 @@ fn hint_spans(hints: &str, colors: &ThemeColors) -> Vec<Span<'static>> {
         .enumerate()
     {
         if i > 0 {
-            spans.push(Span::styled("  ", Style::new().fg(colors.fg2)));
+            spans.push(Span::styled("  ", Style::new().fg(colors.fg1)));
         }
         let Some((key, action)) = hint.split_once(':') else {
-            spans.push(Span::styled(hint.to_string(), Style::new().fg(colors.fg2)));
+            spans.push(Span::styled(hint.to_string(), Style::new().fg(colors.fg1)));
             continue;
         };
         spans.push(Span::styled(
             key.to_string(),
             Style::new().fg(colors.yellow),
         ));
-        spans.push(Span::styled(":", Style::new().fg(colors.fg2)));
+        spans.push(Span::styled(":", Style::new().fg(colors.fg1)));
         spans.push(Span::styled(
             action.to_string(),
             Style::new().fg(colors.fg1),

@@ -32,12 +32,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         Some(RecordsSource::Query { .. }) => "query results".into(),
         None => "records".into(),
     };
-    let status_hints = format!(
-        "row {}/{}  col {}",
-        records.selected_row + 1,
-        records.rows.len(),
-        col_name
-    );
+    let status_hints = format!("col {}", col_name);
 
     widgets::hintbar::render(frame, chunks[0], &state.theme.colors, HINTS);
     render_table(frame, chunks[1], state);
@@ -73,7 +68,7 @@ fn render_table(frame: &mut Frame, area: Rect, state: &AppState) {
                 let style = if i == records.selected_col {
                     Style::new().fg(colors.orange).bold()
                 } else {
-                    Style::new().fg(colors.fg2).bold()
+                    Style::new().fg(colors.fg1).bold()
                 };
                 Cell::from(c.name.as_str()).style(style)
             })
@@ -142,7 +137,7 @@ fn render_expanded(frame: &mut Frame, area: Rect, state: &AppState) {
                 Cell::from(format!("-[ RECORD {record_num} ]")),
                 Cell::from(""),
             ])
-            .style(Style::new().fg(colors.secondary).bold()),
+            .style(Style::new().fg(colors.primary).bold()),
         );
 
         for (col_idx, col) in records.columns.iter().enumerate() {

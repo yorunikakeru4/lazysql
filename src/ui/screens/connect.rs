@@ -1,5 +1,5 @@
 use crate::state::app::AppState;
-use crate::state::connection::{ConnectionMeta, ConnectionStatus};
+use crate::state::connection::{ConnectionMeta, ConnectionStatus, filtered_drivers};
 use crate::themes::palette::ThemeColors;
 use crate::ui::widgets::components::picker::{PickerItem, PickerView};
 use crate::ui::{layout, widgets};
@@ -158,12 +158,12 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
         .collect();
 
     let header = Row::new(vec![
-        Cell::from(" #").style(Style::new().fg(colors.fg2)),
-        Cell::from("NAME").style(Style::new().fg(colors.fg2).bold()),
-        Cell::from("HOST").style(Style::new().fg(colors.fg2).bold()),
-        Cell::from("DRIVER").style(Style::new().fg(colors.fg2).bold()),
-        Cell::from("DATABASE").style(Style::new().fg(colors.fg2).bold()),
-        Cell::from("STATUS").style(Style::new().fg(colors.fg2).bold()),
+        Cell::from(" #").style(Style::new().fg(colors.fg0)),
+        Cell::from("NAME").style(Style::new().fg(colors.fg0).bold()),
+        Cell::from("HOST").style(Style::new().fg(colors.fg0).bold()),
+        Cell::from("DRIVER").style(Style::new().fg(colors.fg0).bold()),
+        Cell::from("DATABASE").style(Style::new().fg(colors.fg0).bold()),
+        Cell::from("STATUS").style(Style::new().fg(colors.fg0).bold()),
     ]);
 
     let rows: Vec<Row> = metas
@@ -175,11 +175,11 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
             let host = &m.host;
             let port = m.port;
             Row::new(vec![
-                Cell::from(format!(" {row_number}")).style(Style::new().fg(colors.fg2)),
-                Cell::from(m.name.clone()).style(Style::new().fg(colors.fg0)),
-                Cell::from(format!("{host}:{port}")).style(Style::new().fg(colors.fg1)),
+                Cell::from(format!(" {row_number}")).style(Style::new().fg(colors.fg0)),
+                Cell::from(m.name.clone()).style(Style::new().fg(colors.aqua)),
+                Cell::from(format!("{host}:{port}")).style(Style::new().fg(colors.fg0)),
                 Cell::from(m.driver.clone()).style(Style::new().fg(colors.blue)),
-                Cell::from(m.db_name.clone()).style(Style::new().fg(colors.fg1)),
+                Cell::from(m.db_name.clone()).style(Style::new().fg(colors.fg0)),
                 status_cell,
             ])
         })
@@ -214,7 +214,7 @@ fn render_connection_list(frame: &mut Frame, area: Rect, state: &AppState) {
         .header(header)
         .block(
             Block::bordered()
-                .title(format!(" Saved Connections     {count_str} "))
+                .title(format!(" Saved Connections {count_str} "))
                 .title_style(Style::new().fg(colors.secondary).bold())
                 .border_style(Style::new().fg(colors.primary)),
         )
@@ -359,7 +359,7 @@ fn render_driver_picker(frame: &mut Frame, state: &AppState) {
     let colors = state.theme.colors;
     let area = layout::centered_rect(48, 12, frame.area());
 
-    let filtered = state.connect.driver_picker.filtered_drivers();
+    let filtered = filtered_drivers(&state.connect.driver_picker.query);
 
     let items: Vec<PickerItem<'_>> = filtered
         .iter()
@@ -382,7 +382,7 @@ fn render_driver_picker(frame: &mut Frame, state: &AppState) {
         footer: Line::from(vec![
             Span::styled(
                 format!(" {visible} of {total} drivers  "),
-                Style::new().fg(colors.fg2),
+                Style::new().fg(colors.fg1),
             ),
             Span::styled("enter:select", Style::new().fg(colors.yellow)),
             Span::raw("  "),
@@ -429,17 +429,17 @@ fn render_details_panel(frame: &mut Frame, area: Rect, state: &AppState) {
         let host = &m.host;
         vec![
             Line::from(vec![
-                Span::styled("  driver  ", Style::new().fg(colors.fg2)),
+                Span::styled("  driver  ", Style::new().fg(colors.fg0)),
                 Span::styled(&m.driver, Style::new().fg(colors.blue)),
             ]),
             Line::from(vec![
-                Span::styled("  user    ", Style::new().fg(colors.fg2)),
+                Span::styled("  user    ", Style::new().fg(colors.fg0)),
                 Span::styled(format!("{user}@{host}"), Style::new().fg(colors.purple)),
-                Span::styled("   ·   port  ", Style::new().fg(colors.fg2)),
+                Span::styled("   ·   port  ", Style::new().fg(colors.fg0)),
                 Span::styled(m.port.to_string(), Style::new().fg(colors.fg0)),
             ]),
             Line::from(vec![
-                Span::styled("  db      ", Style::new().fg(colors.fg2)),
+                Span::styled("  db      ", Style::new().fg(colors.fg0)),
                 Span::styled(&m.db_name, Style::new().fg(colors.fg0)),
             ]),
         ]
