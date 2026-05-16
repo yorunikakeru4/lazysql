@@ -32,7 +32,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
         Some(RecordsSource::Query { .. }) => "query results".into(),
         None => "records".into(),
     };
-    let status_hints = format!("col {}", col_name);
+    let status_hints = format!("col {col_name}");
 
     widgets::hintbar::render(frame, chunks[0], &state.theme.colors, HINTS);
     render_table(frame, chunks[1], state);

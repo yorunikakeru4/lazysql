@@ -653,9 +653,35 @@ async fn handle_records(
             router.pop();
         }
 
-        KeyCode::Down | KeyCode::Char('j') if is_vertical => state.records.move_col_right(),
-        KeyCode::Down | KeyCode::Char('j') => state.move_record_down(false).await,
-        KeyCode::Up | KeyCode::Char('k') if is_vertical => state.records.move_col_left(),
+        KeyCode::Down | KeyCode::Char('j') if is_vertical => {
+            let last_col = state.records.columns.len().saturating_sub(1);
+
+            if state.records.selected_col >= last_col {
+                state.move_record_down(true).await;
+                state.records.selected_col = 0;
+            } else {
+                state.records.move_col_right();
+            }
+        }
+
+        KeyCode::Down | KeyCode::Char('j') => {
+            state.move_record_down(false).await;
+        }
+
+        KeyCode::Up | KeyCode::Char('k') if is_vertical => {
+            if state.records.selected_col == 0 {
+                let old_row = state.records.selected_row;
+
+                state.move_record_up(true).await;
+
+                if state.records.selected_row != old_row {
+                    state.records.selected_col = state.records.columns.len().saturating_sub(1);
+                }
+            } else {
+                state.records.move_col_left();
+            }
+        }
+
         KeyCode::Up | KeyCode::Char('k') => state.move_record_up(false).await,
         KeyCode::Char('l') | KeyCode::Right if is_vertical => state.move_record_down(true).await,
         KeyCode::Char('l') | KeyCode::Right => state.records.move_col_right(),
