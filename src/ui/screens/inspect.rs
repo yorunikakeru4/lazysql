@@ -24,15 +24,22 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState) {
     let show_search = state.search.active || !state.search.query.is_empty();
     let chunks = Layout::vertical(if show_search {
         vec![
+            // Hint bar
             Constraint::Length(1),
+            // body
             Constraint::Fill(1),
+            // Search bar
             Constraint::Length(3),
+            // Status bar
             Constraint::Length(1),
         ]
     } else {
         vec![
+            // Hint bar
             Constraint::Length(1),
+            // body
             Constraint::Fill(1),
+            // Status bar
             Constraint::Length(1),
         ]
     })
@@ -74,8 +81,11 @@ fn render_body(frame: &mut Frame, area: Rect, state: &AppState) {
     let colors = &state.theme.colors;
 
     let body_chunks = Layout::vertical([
+        // Header
         Constraint::Length(1),
+        // Columns table
         Constraint::Fill(1),
+        // Footer
         Constraint::Length(4),
     ])
     .split(area);
