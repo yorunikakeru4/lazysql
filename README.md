@@ -18,7 +18,7 @@
 
 ```nix
  environment.systemPackages = [
-    inputs.awww.packages.${pkgs.stdenv.hostPlatform.system}.awww
+    inputs.lazysql.packages.${pkgs.stdenv.hostPlatform.system}.lazysql
   ];
 
 ```
